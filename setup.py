@@ -18,6 +18,7 @@ setuptools.setup(
     install_requires=[
         'riotwatcher',
         'requests',
+        'psutil',
     ],
     classifiers=(
         "Programming Language :: Python :: 3",
