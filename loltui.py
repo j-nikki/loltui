@@ -1,11 +1,14 @@
 import json
 import os
+import queue
 import re
 import sys
 import tempfile
+import threading
 import time
+from contextlib import suppress
 from itertools import chain
-from typing import Optional
+from typing import Iterable, Optional
 from urllib.request import urlopen
 
 import psutil
@@ -124,16 +127,18 @@ class Client:
         "JP": "JP1"}
 
     @staticmethod
-    def __get_exe():
+    def __get_port_and_token() -> tuple[str, str]:
         out(f'waiting for client, press {ctell("Ctrl+C")} to abort')
         while True:
-            try:
-                res = next(p.exe() for p in psutil.process_iter()
-                           if p.name() == 'LeagueClient.exe')
+            with suppress(FileNotFoundError, StopIteration):
+                proc = psutil.Process
+                exe = next(proc(c.pid).exe() for c in psutil.net_connections('tcp4') if proc(
+                    c.pid).name() == 'LeagueClient.exe' and c.status == 'LISTEN')
+                with open(os.path.join(os.path.dirname(exe), 'lockfile'), 'r') as f:
+                    _, _, port, token, _ = f.read().split(':')
                 out_rm()
-                return res
-            except StopIteration:
-                time.sleep(2)
+                return port, token
+            time.sleep(2)
 
     def __init__(self):
         certfd, self.__cert = tempfile.mkstemp(suffix='.pem')
@@ -141,9 +146,7 @@ class Client:
             'https://static.developer.riotgames.com/docs/lol/riotgames.pem').read())
         os.close(certfd)
 
-        dir_, _ = os.path.split(self.__get_exe())
-        with open(os.path.join(dir_, 'lockfile'), 'r') as f:
-            _, _, self.__port, self.__token, _ = f.read().split(':')
+        self.__port, self.__token = self.__get_port_and_token()
 
         reg = self.get_dict('riotclient/region-locale')['region']
         global platf
@@ -194,33 +197,125 @@ def wins_losses(acc) -> list[bool]:
     try:
         ms = lw.match.matchlist_by_account(
             platf, acc, {420, 440}, end_index=5)['matches']
+        res = [False for _ in range(5)]
+        for i, m in enumerate(lw.match.by_id(platf, x['gameId']) for x in ms):
+            pi = next(x['participantId'] for x in m['participantIdentities']
+                      if x['player']['accountId'] == acc)
+            ti = next(x['teamId']
+                      for x in m['participants'] if x['participantId'] == pi)
+            res[i] = next(x['win'] == 'Win' for x in m['teams']
+                          if x['teamId'] == ti)
+        return res
     except BaseException:
         return []
-    res = [False for _ in range(5)]
-    for i, m in enumerate(lw.match.by_id(platf, x['gameId']) for x in ms):
-        pi = next(x['participantId'] for x in m['participantIdentities']
-                  if x['player']['accountId'] == acc)
-        ti = next(x['teamId']
-                  for x in m['participants'] if x['participantId'] == pi)
-        res[i] = next(x['win'] == 'Win' for x in m['teams']
-                      if x['teamId'] == ti)
-    return res
 
-def id2player(d) -> tuple[str, str, list[dict]]:  # -> id, name, masteries
+def id2player(sid: str) -> tuple[str, str, list[dict]]:  # -> id, name, masteries
     # Since V4, Riot API expects per-project encrypted IDs. As client does not
     # thus give IDs in a satisfactory format, we query champion names through
     # client and use that to retrieve summoner data.
     dto = lw.summoner.by_name(platf, client.get_dict(
-        f'lol-summoner/v1/summoners/{d["summonerId"]}')['internalName'])
+        f'lol-summoner/v1/summoners/{sid}')['internalName'])
     return dto, dto['name'], lw.champion_mastery.by_summoner(platf, dto['id'])
 
 #
-# Champ select info
+# Player info presenter
+#
+
+champions[-1] = {'name': '...'}  # dummy champion (e.g. when none picked)
+class PlayerInfo():
+    __ppts = re.compile(r'\S+')
+
+    def __wl_calc(self):
+        for i, wl in enumerate(wins_losses(
+                x[0]['accountId']) for x in self.__ps):
+            if wl:
+                self.__q.put((i, wl))
+
+    def __init__(self, cl: Client, summoner_ids: Iterable[str], show_fn):
+        self.__ps = [id2player(x) for x in summoner_ids]
+        self.__wl = [[] for _ in self.__ps]
+        self.__seek = out_sz()
+        self.__champs = []
+        self.__show_fn = show_fn
+        self.__q = queue.Queue()
+        threading.Thread(target=self.__wl_calc, daemon=True).start()
+
+    def __get(self, i: int) -> tuple[str, str]:
+        T = '\0 '  # 0-terminator, used for aligning info
+        _, name, champs = self.__ps[i]
+        if not 0 <= (idx := self.__champidx[i]) <= 9:
+            champs = champs[:8]
+            champs.append({
+                'championId': -1,
+                'championPoints': -1})
+            champs.append({
+                'championId': self.__champs[i],
+                'championPoints': 0 if idx == -1 else self.__ps[i][2][idx]['championPoints']})
+        return f'{name}{T}│ {T.join(champions[c["championId"]]["name"] for c in champs[:10])}', \
+            f'.....{T}│ {T.join(str(c["championPoints"]//1000)+"K" for c in champs[:10])}'
+
+    def get(self) -> Iterable[str]:
+        '''
+        Returns all lines of the table. Use self.post() for post-processing.
+        '''
+        return chain.from_iterable(map(self.__get, range(len(self.__champs))))
+
+    def clear(self):
+        out_rm(-self.__seek)
+
+    def update(self, champs: Iterable[int]):
+        '''
+        Updates the presented table to match given champ selections
+        '''
+        while not self.__q.empty():
+            i, wl = self.__q.get()
+            self.__wl[i] = wl
+            self.__champs = []
+        if self.__champs != champs:
+            self.__champs = champs
+            self.__champidx = [next((i for i, c in enumerate(
+                y[2]) if x == c['championId']), -1) for x, y in zip(champs, self.__ps)]
+            self.__show_fn()
+
+    def post(self, i: int, x: str):
+        '''
+        Applies post-processing effects (e.g. coloring) to given line
+        '''
+        t, g = ctell, cgray
+        j = i // 2  # player idx
+
+        def wl(i):
+            if not self.__wl[i]:
+                return '     '
+            return ''.join((t if x else g)('•') for x in self.__wl[i])
+
+        def pts(i, x: str):
+            if (m1k := x.find('-1K')) != -1:
+                return f'{g(x[:m1k])}   {x[m1k+3:]}'
+            b = x.index('K') + 1
+            for _ in range(self.__champidx[j]):
+                b = x.index('K', b) + 1
+            a = x.rindex(' ', 0, b)
+            return f'{g(x[:a])}{x[a:b]}{g(x[b:])}'
+
+        def champ(x: str):
+            a, b = next(re.finditer(
+                r'\b' + champions[self.__champs[j]]['name'] + r'\b', x)).span()
+            return f'{g(x[:a])}{t(x[a:b])}{g(x[b:])}'
+
+        if i % 2:  # odd line idx
+            if i == len(self.__champs) * 2 - 1:
+                self.clear()
+            return f'{wl(j)}{pts(j, x[5:])}' if i % 2 else t(x)
+
+        sep = x.rindex('│')
+        return f'{t(x[:sep])}{champ(x[sep:])}'
+
+#
+# Champ select inspector
 #
 
 class ChampSelect():
-    __ppts = re.compile(r'\S+')
-
     def __get_data(self) -> tuple[dict, str]:
         if DEBUG:
             from loltui.debugdata import champ_select
@@ -230,69 +325,22 @@ class ChampSelect():
             if d := self.__cl.get_dict(
                     'lol-lobby-team-builder/champ-select/v1/session'):
                 out_rm()
-                out('champ select detected, collecting stats')
                 return d, qdata[self.__cl.get_dict(
                     'lol-lobby-team-builder/v1/matchmaking')['queueId']]['description'].rstrip(' games')
             time.sleep(2)
 
     def __init__(self, cl: Client):
         self.__cl = cl
-        self.__champs = []
         d, self.__q = self.__get_data()
-        self.__ps = [*map(id2player, d['myTeam'])]
-        self.__wl = [[] for _ in self.__ps]
-        self.__seek = out_sz()
+        self.__pi = PlayerInfo(cl, [x['summonerId']
+                                    for x in d['myTeam']], self.__present)
         self.update(d)
-        for i, wl in enumerate(wins_losses(
-                x[0]['accountId']) for x in self.__ps):
-            self.__wl[i] = wl
-            self.__update()
 
-    def __info(self, i: int):
-        '''
-        Returns a list of strings with info on player at given index
-        '''
-        T = '\0 '  # 0-terminator, used for aligning info
-        _, name, champs = self.__ps[i]
-        if (idx := self.__champidx[i]) > 9:
-            champs = champs[:]
-            champs[8] = None
-            champs[9] = {
-                'championId': self.__champs[i],
-                'championPoints': 0 if idx == -1 else self.__ps[i][2][idx]['championPoints']}
-        return f'{name}{T}│ {T.join(champions[c["championId"]]["name"] if c else "..." for c in champs[:10])}', \
-            f'.....{T}│ {T.join(str(c["championPoints"]//1000)+"K" if c else "" for c in champs[:10])}'
-
-    def __update(self):
+    def __present(self):
         '''
         Constructs and presents champ select box to the user
         '''
-        def post_wl(i):  # win-loss post-processing
-            if not self.__wl[i]:
-                return '     '
-            wl = [cgray('•'), ctell('•')]
-            return ''.join(wl[x] for x in self.__wl[i])
-
-        def post_pts(i, x):  # mastery points post-processing
-            a, b = list(map(re.Match.span, self.__ppts.finditer(x)))[
-                self.__champidx[i] + 1 if 0 <= self.__champidx[i] <= 9 else 9]
-            return f'{cgray(x[:a])}{x[a:b]}{cgray(x[b:])}'
-
-        def post(i, x: str):  # post-processing main
-            t, g = ctell, cgray
-            if i % 2:  # odd line idx
-                if i == len(self.__champs) * 2 - 1:
-                    out_rm(-self.__seek)
-                j = i // 2  # player idx
-                return f'{post_wl(j)}{post_pts(j, x[5:])}' if i % 2 else t(x)
-            sep = x.rindex('│')
-            if (ell := x.find('...', sep)) == -1:
-                return t(f'{t(x[:sep])}{g("│")}{t(x[sep+1:])}')
-            return t(
-                f'{t(x[:sep])}{g("│")}{t(x[sep+1:ell])}{g(x[ell:ell+3])}{t(x[ell+3:])}')
-
-        box(*chain.from_iterable(map(self.__info, range(len(self.__champs)))),
-            post=post, title=self.__q)
+        box(*self.__pi.get(), post=self.__pi.post, title=self.__q)
 
     def update(self, d: Optional[dict] = None) -> bool:
         '''
@@ -304,18 +352,13 @@ class ChampSelect():
             d = self.__cl.get_dict(
                 'lol-lobby-team-builder/champ-select/v1/session')
             if not d:
-                out_rm(-self.__seek)
+                self.__pi.clear()
                 return False
-        champs = [x['championId'] for x in d['myTeam']]
-
-        if champs != self.__champs:
-            self.__champs = champs
-            self.__champidx = [next((i for i, c in enumerate(
-                y[2]) if x == c['championId']), -1) for x, y in zip(champs, self.__ps)]
-            self.__update()
-
+        self.__pi.update([x['championId'] for x in d['myTeam']])
         return True
 
 cs = ChampSelect(client)
 while cs.update():
     time.sleep(0.25)  # we can do this often as no outbound requests are done
+
+# TODO: load screen & in-game

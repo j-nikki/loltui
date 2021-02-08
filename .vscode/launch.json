@@ -2,7 +2,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "debug loltui",
+            "name": "loltui ndebug",
+            "type": "python",
+            "request": "launch",
+            "module": "loltui",
+            "cwd": "${workspaceFolder}/.."
+        },
+        {
+            "name": "loltui debug",
             "type": "python",
             "request": "launch",
             "module": "loltui",
