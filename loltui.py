@@ -180,10 +180,12 @@ def id2player(sid: str) -> tuple[str, str, list]:
     d = client.get_dict(f'lol-summoner/v1/summoners/{sid}')
     q = client.get_dict(
         f'lol-ranked/v1/ranked-stats/{d["puuid"]}')['queueMap']['RANKED_SOLO_5x5']
-    rank = f'{q["tier"][0].upper()}{divs.index(q["division"])+1}' if q['division'] != 'NA' else ''
+    def fmt(t: str, d: str):
+        return f'{t[0].upper()}{divs.index(d)+1}' if d != 'NA' else ''
+    rank = f'{fmt(q["previousSeasonEndTier"], q["previousSeasonEndDivision"])}→{fmt(q["tier"], q["division"])}'
     cm = client.get_dict(
         f'lol-collections/v1/inventories/{d["summonerId"]}/champion-mastery')
-    return d, rank, cm
+    return d, rank if rank != '→' else '', cm
 
 #
 # Player info presenter
@@ -283,9 +285,11 @@ class PlayerInfo():
             wl = ''.join((t if y == '1' else g)('•') for y in x[:nwl])
             return f'{wl}{pts(j, x[nwl:])}'
 
-        rank = x.index('\t')
-        rstr = c(x[rank + 1:rank + 3]) if (c := crank.get(x[rank + 1])) else ''
-        return f'{t(x[:rank])} {rstr}{champ(x[rank+(3 if rstr else 1):])}'
+        m = re.search(r'\t(\w\d)?(→)?(\w\d)?', x)
+        def color(y): return crank[y[0]](y)
+        rank = f'{color(m[1]) if m[1] else ""}{cgray(m[2]) if m[2] else ""}{color(m[3]) if m[3] else ""}'
+        a, b = m.span()
+        return f'{t(x[:a])} {rank}{champ(x[b:])}'
 
 #
 # Champ select inspector
