@@ -2,10 +2,10 @@ import json
 import os
 import queue
 import re
-import sys
 import tempfile
 import threading
 import time
+from argparse import ArgumentParser
 from contextlib import suppress
 from itertools import chain
 from typing import Iterable, Optional
@@ -18,7 +18,13 @@ import requests
 # Process args
 #
 
-DEBUG = '--debug' in sys.argv
+ap = ArgumentParser(
+    description="gives info about the players you're playing with")
+ap.add_argument('--debug', '-d', action='store_true',
+                help='supply the program with demo data')
+args = ap.parse_args()
+
+DEBUG = args.debug
 
 #
 # Colored output
@@ -92,7 +98,7 @@ class Client:
     def __get_port_and_token() -> tuple[str, str]:
         out(f'waiting for client, press {ctell("Ctrl+C")} to abort')
         while True:
-            with suppress(FileNotFoundError, StopIteration):
+            with suppress(FileNotFoundError, StopIteration, psutil.NoSuchProcess):
                 proc = psutil.Process
                 exe = next(proc(c.pid).exe() for c in psutil.net_connections('tcp4') if proc(
                     c.pid).name() == 'LeagueClient.exe' and c.status == 'LISTEN')
@@ -107,13 +113,7 @@ class Client:
         os.write(certfd, urlopen(
             'https://static.developer.riotgames.com/docs/lol/riotgames.pem').read())
         os.close(certfd)
-
         self.__port, self.__token = self.__get_port_and_token()
-
-        self.__reg = self.get_dict('riotclient/region-locale')['region']
-        global platf
-        platf = __class__.__reg2platf.get(self.__reg, self.__reg)
-        out(f"using region {ctell(self.__reg)} (platform {ctell(platf)})")
 
     def get(self, endpoint: str, **kwargs) -> requests.Response:
         try:
@@ -128,12 +128,16 @@ class Client:
         return {} if resp.status_code == 404 else json.loads(
             self.get(endpoint, **kwargs).content)
 
+    def game(self, endpoint: str, **kwargs) -> Optional[dict]:
+        port = 2999  # fixed port per Riot docs
+        with suppress(requests.ConnectionError):
+            res = requests.get(f'https://127.0.0.1:{port}/{endpoint}', params=kwargs, headers={
+                'Accept': 'application/json'}, verify=self.__cert)
+            if res.status_code == 200:
+                return json.loads(res.content)
+
     def __del__(self):
         os.remove(self.__cert)
-
-    @property
-    def region(self) -> str:
-        return self.__reg
 
 client = Client()
 
@@ -142,7 +146,7 @@ client = Client()
 #
 
 vdata = json.loads(urlopen(
-    f'https://ddragon.leagueoflegends.com/realms/{client.region.lower()}.json').read())['v']
+    f'https://ddragon.leagueoflegends.com/realms/{client.get_dict("riotclient/region-locale")["region"].lower()}.json').read())['v']
 out(f'game data version is {ctell(vdata)}')
 champions = {int(x['key']): x for x in json.loads(urlopen(
     f'https://ddragon.leagueoflegends.com/cdn/{vdata}/data/en_US/champion.json').read())['data'].values()}
@@ -202,7 +206,7 @@ crank = {  # rank colorizers
     'M': colorizer(12),
     'C': colorizer(50)}
 class PlayerInfo():
-    __ppts = re.compile(r'\S+')
+    __prank = re.compile(r'\t(\w\d)?(→)?(\w\d)?')
 
     def __wl_calc(self):
         for i, wl in enumerate(wins_losses(x[0]) for x in self.__ps):
@@ -220,9 +224,9 @@ class PlayerInfo():
 
     def __get(self, i: int) -> tuple[str, str]:
         T = '\0 '  # 0-terminator, used for aligning info
-        info, rank, champs = self.__ps[i]
+        (info, rank, champs), idx = self.__ps[i], self.__champidx[i]
         name = info['displayName'] + '\t' + rank
-        if not 0 <= (idx := self.__champidx[i]) <= 9:
+        if not 0 <= idx <= 9:
             champs = champs[:8]
             champs.append({
                 'championId': -1,
@@ -242,7 +246,7 @@ class PlayerInfo():
     def clear(self):
         out_rm(-self.__seek)
 
-    def update(self, champs: Iterable[int]):
+    def update(self, cids: list[int]):
         '''
         Updates the presented table to match given champ selections
         '''
@@ -250,10 +254,10 @@ class PlayerInfo():
             i, wl = self.__q.get()
             self.__wl[i] = wl
             self.__champs = []
-        if self.__champs != champs:
-            self.__champs = champs
+        if self.__champs != cids:
+            self.__champs = cids
             self.__champidx = [next((i for i, c in enumerate(
-                y[2]) if x == c['championId']), -1) for x, y in zip(champs, self.__ps)]
+                y[2]) if x == c['championId']), -1) for x, y in zip(cids, self.__ps)]
             self.__show_fn()
 
     def post(self, i: int, x: str):
@@ -285,36 +289,21 @@ class PlayerInfo():
             wl = ''.join((t if y == '1' else g)('•') for y in x[:nwl])
             return f'{wl}{pts(j, x[nwl:])}'
 
-        m = re.search(r'\t(\w\d)?(→)?(\w\d)?', x)
+        m = self.__prank.search(x)
         def color(y): return crank[y[0]](y)
         rank = f'{color(m[1]) if m[1] else ""}{cgray(m[2]) if m[2] else ""}{color(m[3]) if m[3] else ""}'
         a, b = m.span()
         return f'{t(x[:a])} {rank}{champ(x[b:])}'
 
 #
-# Champ select inspector
+# Session tab-keeper
 #
 
-class ChampSelect():
-    def __get_data(self) -> tuple[dict, str]:
-        if DEBUG:
-            from loltui.debugdata import champ_select
-            return champ_select
-        out(f'waiting for champ select, press {ctell("Ctrl+C")} to abort')
-        while True:
-            if d := self.__cl.get_dict(
-                    'lol-lobby-team-builder/champ-select/v1/session'):
-                out_rm()
-                return d, qdata[self.__cl.get_dict(
-                    'lol-lobby-team-builder/v1/matchmaking')['queueId']]['description'].rstrip(' games')
-            time.sleep(2)
-
-    def __init__(self, cl: Client):
-        self.__cl = cl
-        d, self.__q = self.__get_data()
-        self.__pi = PlayerInfo(cl, [x['summonerId']
-                                    for x in d['myTeam']], self.__present)
-        self.update(d)
+class Session():
+    def __init__(self, q: str, sids: Iterable[int], cids: Iterable[int]):
+        self.__q = q
+        self.__pi = PlayerInfo(client, sids, self.__present)
+        self.__pi.update(cids)
 
     def __present(self):
         '''
@@ -322,23 +311,64 @@ class ChampSelect():
         '''
         box(*self.__pi.get(), post=self.__pi.post, title=self.__q)
 
-    def update(self, d: Optional[dict] = None) -> bool:
-        '''
-        Returns whether update was possible
-        '''
-        if not d:
-            if DEBUG:
-                return False
-            d = self.__cl.get_dict(
-                'lol-lobby-team-builder/champ-select/v1/session')
-            if not d:
-                self.__pi.clear()
-                return False
-        self.__pi.update([x['championId'] for x in d['myTeam']])
-        return True
+    def loop(self, cids_getter, interval: float):
+        while cids := cids_getter():
+            self.__pi.update(cids)
+            time.sleep(interval)
+        self.__pi.clear()
 
-cs = ChampSelect(client)
-while cs.update():
-    time.sleep(0.25)  # we can do this often as no outbound requests are done
+#
+# Session awaiting
+#
 
-# TODO: load screen & in-game
+champ2id = {v['name']: k for k, v in champions.items()}
+def get_session_params(interval: float):
+
+    if DEBUG:
+        # Debug stats (champ select sample)
+        from loltui.debugdata import champ_select
+        d, q = champ_select
+        cids = [x['championId'] for x in d['myTeam']]
+        return q, [x['summonerId'] for x in d['myTeam']], cids, lambda: cids
+
+    def ingame() -> bool:
+        return client.get(
+            'lol-gameflow/v1/gameflow-phase').content == b'"InProgress"'
+
+    while True:
+        if d := client.get_dict(
+                'lol-lobby-team-builder/champ-select/v1/session'):
+            q = qdata[client.get_dict(
+                'lol-lobby-team-builder/v1/matchmaking')['queueId']]['description'].rstrip(' games')
+            def get_cids():
+                if d := client.get_dict(
+                        'lol-lobby-team-builder/champ-select/v1/session'):
+                    return [x['championId'] for x in d['myTeam']]
+            return q, [x['summonerId'] for x in d['myTeam']], [
+                x['championId'] for x in d['myTeam']], get_cids
+
+        if d := client.game('liveclientdata/allgamedata'):
+            d = {x['summonerName']: x['championName'] for x in d['allPlayers']}
+            gd = client.get_dict('lol-gameflow/v1/session')['gameData']
+            ps = list(chain(gd['teamOne'], gd['teamTwo']))
+            q = qdata.get(gd['queue']['id'], {'description': 'Custom'})[
+                'description'].removesuffix(' games')
+            cids = [champ2id[d[x['summonerName']]] for x in ps]
+            return q, [int(x['summonerId'])
+                       for x in ps], cids, lambda: ingame() and cids
+
+        time.sleep(interval)
+
+#
+# Main loop
+#
+
+try:
+    while True:
+        out(f'waiting for session, press {ctell("Ctrl+C")} to abort')
+        q, sids, cids, cids_getter = get_session_params(1)
+        out_rm()
+        ses = Session(q, sids, cids)
+        ses.loop(cids_getter, 1)
+except KeyboardInterrupt:
+    pass

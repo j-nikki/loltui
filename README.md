@@ -1,9 +1,10 @@
 # loltui
 
-This is a proof-of-concept LoL assistant using a TUI-interface. When you join a lobby it tells the following.
+This is a proof-of-concept LoL assistant using a TUI-interface. When you join a lobby it shows the following about each of the players.
 
-- 5 most recent ranked game outcomes
-- Champion points for hovered champion
+- Recent ranked game outcomes
+- Mastery points for hovered champion
+- Last season end rank and current rank
 
 See LICENSE for terms of use.
 
@@ -14,11 +15,11 @@ See LICENSE for terms of use.
 
 ## Usage
 
-1. `py -m loltui`
+1. `py -m loltui --help`
 
 ## Creating EXE
 
-1. `py -m loltui --exe`
+1. `py -m loltui --exe` (undocumented flag)
 2. Use created `loltui.exe`
 
 ## Acknowledgments

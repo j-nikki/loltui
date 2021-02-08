@@ -1,6 +1,6 @@
 import sys
 
-if '--exe' in sys.argv:
+if sys.argv[1:] == ('--exe'):
     import io
     import os
     import tempfile
@@ -14,13 +14,13 @@ if '--exe' in sys.argv:
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
             z.extract('upx-3.96-win64/upx.exe', d_tmp)
         d_src = os.path.dirname(sys.argv[0])
-        
+
         subprocess.call([sys.executable, '-m', 'venv', d_tmp])
         subprocess.call([os.path.join(d_tmp,
                                       'Scripts',
                                       'pip'),
                          'install',
-                         'pycparser==2.14', # https://github.com/eliben/pycparser/issues/291
+                         'pycparser==2.14',  # https://github.com/eliben/pycparser/issues/291
                          'PyInstaller',
                          'psutil',
                          'requests'])
