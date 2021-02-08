@@ -13,51 +13,12 @@ from urllib.request import urlopen
 
 import psutil
 import requests
-import riotwatcher as rw
-
-from loltui.devkey import DEV_KEY
 
 #
 # Process args
 #
 
 DEBUG = '--debug' in sys.argv
-
-if '--exe' in sys.argv:
-    import io
-    import zipfile
-
-    import PyInstaller.__main__
-
-    with tempfile.TemporaryDirectory() as d_dst:
-        r = requests.get(
-            'https://github.com/upx/upx/releases/download/v3.96/upx-3.96-win64.zip')
-        with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-            z.extract('upx-3.96-win64/upx.exe', d_dst)
-        old_env = os.environ.copy()
-        os.environ['PYTHONOPTIMIZE'] = '1'
-        try:
-            d_src = os.path.dirname(sys.argv[0])
-            PyInstaller.__main__.run([
-                sys.argv[0],
-                '-F',
-                '--upx-dir',
-                os.path.join(d_dst, 'upx-3.96-win64'),
-                '--workpath',
-                d_dst,
-                '--specpath',
-                d_dst,
-                '--distpath',
-                '.',
-                '--clean',
-                '-p',
-                d_src,
-                '-i',
-                os.path.join(d_src, 'images', 'icon.ico')])
-        finally:
-            os.environ.clear()
-            os.environ.update(old_env)
-        exit(0)
 
 #
 # Colored output
@@ -101,6 +62,7 @@ def aligned(l: list[str]):
             l[i] = f'{l[i][:j]}{" "*(m - j)}{l[i][j+1:]}'
     return m and aligned(l) or l
 
+# https://en.wikipedia.org/wiki/Box-drawing_character
 def box(*l, post=lambda i, x: x, min_width=40, title=None):
     l = aligned([str(x).rstrip() for x in l])
     w = max(min_width, *map(len, l))
@@ -148,10 +110,10 @@ class Client:
 
         self.__port, self.__token = self.__get_port_and_token()
 
-        reg = self.get_dict('riotclient/region-locale')['region']
+        self.__reg = self.get_dict('riotclient/region-locale')['region']
         global platf
-        platf = __class__.__reg2platf.get(reg, reg)
-        out(f"using region {ctell(reg)} (platform {ctell(platf)})")
+        platf = __class__.__reg2platf.get(self.__reg, self.__reg)
+        out(f"using region {ctell(self.__reg)} (platform {ctell(platf)})")
 
     def get(self, endpoint: str, **kwargs) -> requests.Response:
         try:
@@ -169,18 +131,21 @@ class Client:
     def __del__(self):
         os.remove(self.__cert)
 
+    @property
+    def region(self) -> str:
+        return self.__reg
+
 client = Client()
 
 #
 # Champion data
 #
 
-lw = rw.LolWatcher(DEV_KEY)
-vdata = json.loads(
-    urlopen('https://ddragon.leagueoflegends.com/realms/euw.json').read())['v']
+vdata = json.loads(urlopen(
+    f'https://ddragon.leagueoflegends.com/realms/{client.region.lower()}.json').read())['v']
 out(f'game data version is {ctell(vdata)}')
-champions = {int(x['key']): x for x in lw.data_dragon.champions(
-    vdata)['data'].values()}
+champions = {int(x['key']): x for x in json.loads(urlopen(
+    f'https://ddragon.leagueoflegends.com/cdn/{vdata}/data/en_US/champion.json').read())['data'].values()}
 
 #
 # Queue data
@@ -193,41 +158,52 @@ qdata = {x['queueId']: x for x in json.loads(urlopen(
 # Summoner data
 #
 
-def wins_losses(acc) -> list[bool]:
-    try:
-        ms = lw.match.matchlist_by_account(
-            platf, acc, {420, 440}, end_index=5)['matches']
-        res = [False for _ in range(5)]
-        for i, m in enumerate(lw.match.by_id(platf, x['gameId']) for x in ms):
-            pi = next(x['participantId'] for x in m['participantIdentities']
-                      if x['player']['accountId'] == acc)
-            ti = next(x['teamId']
-                      for x in m['participants'] if x['participantId'] == pi)
-            res[i] = next(x['win'] == 'Win' for x in m['teams']
-                          if x['teamId'] == ti)
-        return res
-    except BaseException:
-        return []
+def wins_losses(info) -> list[bool]:
+    '''
+    Gets outcome of ranked games from 20 last games
+    '''
+    acc = info['accountId']
+    ml = client.get_dict(f'lol-match-history/v1/friend-matchlists/{acc}')
+    gs = [g for g in ml['games']['games'][::-1] if g['queueId'] in (420, 440)]
+    def f(g):
+        pi = next(x['participantId'] for x in g['participantIdentities']
+                  if x['player']['accountId'] == acc)
+        return next(x['stats']['win']
+                    for x in g['participants'] if x['participantId'] == pi)
+    return [f(g) for g in gs]
 
-def id2player(sid: str) -> tuple[str, str, list[dict]]:  # -> id, name, masteries
-    # Since V4, Riot API expects per-project encrypted IDs. As client does not
-    # thus give IDs in a satisfactory format, we query champion names through
-    # client and use that to retrieve summoner data.
-    dto = lw.summoner.by_name(platf, client.get_dict(
-        f'lol-summoner/v1/summoners/{sid}')['internalName'])
-    return dto, dto['name'], lw.champion_mastery.by_summoner(platf, dto['id'])
+divs = ['I', 'II', 'III', 'IV', 'V']
+def id2player(sid: str) -> tuple[str, str, list]:
+    '''
+    Returns summoner info, rank, and masteries
+    '''
+    d = client.get_dict(f'lol-summoner/v1/summoners/{sid}')
+    q = client.get_dict(
+        f'lol-ranked/v1/ranked-stats/{d["puuid"]}')['queueMap']['RANKED_SOLO_5x5']
+    rank = f'{q["tier"][0].upper()}{divs.index(q["division"])+1}' if q['division'] != 'NA' else ''
+    cm = client.get_dict(
+        f'lol-collections/v1/inventories/{d["summonerId"]}/champion-mastery')
+    return d, rank, cm
 
 #
 # Player info presenter
 #
 
 champions[-1] = {'name': '...'}  # dummy champion (e.g. when none picked)
+crank = {  # rank colorizers
+    'I': colorizer(8),
+    'B': colorizer(95),
+    'S': colorizer(102),
+    'G': colorizer(179),
+    'P': colorizer(7),
+    'D': colorizer(14),
+    'M': colorizer(12),
+    'C': colorizer(50)}
 class PlayerInfo():
     __ppts = re.compile(r'\S+')
 
     def __wl_calc(self):
-        for i, wl in enumerate(wins_losses(
-                x[0]['accountId']) for x in self.__ps):
+        for i, wl in enumerate(wins_losses(x[0]) for x in self.__ps):
             if wl:
                 self.__q.put((i, wl))
 
@@ -242,7 +218,8 @@ class PlayerInfo():
 
     def __get(self, i: int) -> tuple[str, str]:
         T = '\0 '  # 0-terminator, used for aligning info
-        _, name, champs = self.__ps[i]
+        info, rank, champs = self.__ps[i]
+        name = info['displayName'] + '\t' + rank
         if not 0 <= (idx := self.__champidx[i]) <= 9:
             champs = champs[:8]
             champs.append({
@@ -252,7 +229,7 @@ class PlayerInfo():
                 'championId': self.__champs[i],
                 'championPoints': 0 if idx == -1 else self.__ps[i][2][idx]['championPoints']})
         return f'{name}{T}│ {T.join(champions[c["championId"]]["name"] for c in champs[:10])}', \
-            f'.....{T}│ {T.join(str(c["championPoints"]//1000)+"K" for c in champs[:10])}'
+            f'{"".join("01"[y] for y in self.__wl[i])}{T}│ {T.join(str(c["championPoints"]//1000)+"K" for c in champs[:10])}'
 
     def get(self) -> Iterable[str]:
         '''
@@ -284,12 +261,7 @@ class PlayerInfo():
         t, g = ctell, cgray
         j = i // 2  # player idx
 
-        def wl(i):
-            if not self.__wl[i]:
-                return '     '
-            return ''.join((t if x else g)('•') for x in self.__wl[i])
-
-        def pts(i, x: str):
+        def pts(i, x: str):  # line 2: mastery points
             if (m1k := x.find('-1K')) != -1:
                 return f'{g(x[:m1k])}   {x[m1k+3:]}'
             b = x.index('K') + 1
@@ -298,18 +270,22 @@ class PlayerInfo():
             a = x.rindex(' ', 0, b)
             return f'{g(x[:a])}{x[a:b]}{g(x[b:])}'
 
-        def champ(x: str):
-            a, b = next(re.finditer(
-                r'\b' + champions[self.__champs[j]]['name'] + r'\b', x)).span()
+        def champ(x: str):  # line 1: champ names
+            key = champions[self.__champs[j]]['name']
+            a = x.index(key)
+            b = a + len(key)
             return f'{g(x[:a])}{t(x[a:b])}{g(x[b:])}'
 
         if i % 2:  # odd line idx
             if i == len(self.__champs) * 2 - 1:
                 self.clear()
-            return f'{wl(j)}{pts(j, x[5:])}' if i % 2 else t(x)
+            nwl = x.index(' ')
+            wl = ''.join((t if y == '1' else g)('•') for y in x[:nwl])
+            return f'{wl}{pts(j, x[nwl:])}'
 
-        sep = x.rindex('│')
-        return f'{t(x[:sep])}{champ(x[sep:])}'
+        rank = x.index('\t')
+        rstr = c(x[rank + 1:rank + 3]) if (c := crank.get(x[rank + 1])) else ''
+        return f'{t(x[:rank])} {rstr}{champ(x[rank+(3 if rstr else 1):])}'
 
 #
 # Champ select inspector

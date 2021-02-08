@@ -16,7 +16,6 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     python_requires='~=3.9',
     install_requires=[
-        'riotwatcher',
         'requests',
         'psutil',
     ],

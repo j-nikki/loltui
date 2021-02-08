@@ -14,11 +14,16 @@ if '--exe' in sys.argv:
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
             z.extract('upx-3.96-win64/upx.exe', d_tmp)
         d_src = os.path.dirname(sys.argv[0])
-        # 20210207: https://github.com/eliben/pycparser/issues/291
-        # => use pycparser==2.14
+        
         subprocess.call([sys.executable, '-m', 'venv', d_tmp])
-        subprocess.call([os.path.join(d_tmp, 'Scripts', 'pip'),
-                         'install', 'pycparser==2.14', 'PyInstaller', 'psutil', 'riotwatcher', 'requests'])
+        subprocess.call([os.path.join(d_tmp,
+                                      'Scripts',
+                                      'pip'),
+                         'install',
+                         'pycparser==2.14', # https://github.com/eliben/pycparser/issues/291
+                         'PyInstaller',
+                         'psutil',
+                         'requests'])
         subprocess.call([os.path.join(d_tmp, 'Scripts', 'python'), '-OO', '-m', 'PyInstaller',
                          os.path.join(d_src, 'loltui.py'),
                          '-F',

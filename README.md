@@ -14,8 +14,7 @@ See LICENSE for terms of use.
 
 ## Usage
 
-1. Make a `loltui/devkey.py` that'll define your key as `DEV_KEY = 'RGAPI-...'`
-2. `py -m loltui`
+1. `py -m loltui`
 
 ## Creating EXE
 
