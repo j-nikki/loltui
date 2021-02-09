@@ -17,6 +17,8 @@ args = ap.parse_args()
 
 DEBUG = args.debug
 
+out_init()
+
 #
 # Client interfacing
 #

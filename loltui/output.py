@@ -16,7 +16,10 @@ cgray = colorizer(239)
 #
 
 _outbuf = []
-os.system('clear')
+
+def out_init():
+    os.system('clear')
+
 def out(*args):
     _outbuf.append('\t'.join(map(str, args)))
     print(_outbuf[-1])

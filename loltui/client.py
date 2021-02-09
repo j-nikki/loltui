@@ -25,8 +25,8 @@ def _get_port_and_token() -> tuple[str, str]:
     out(f'waiting for client, press {ctell("Ctrl+C")} to abort')
     while True:
         with suppress(FileNotFoundError, StopIteration, psutil.NoSuchProcess):
-            proc = psutil.Process
-            exe = next(proc(c.pid).exe() for c in psutil.net_connections('tcp4') if proc(
+            p = psutil.Process
+            exe = next(p(c.pid).exe() for c in psutil.net_connections('tcp4') if p(
                 c.pid).name() == 'LeagueClient.exe' and c.status == 'LISTEN')
             with open(os.path.join(os.path.dirname(exe), 'lockfile'), 'r') as f:
                 _, _, port, token, _ = f.read().split(':')

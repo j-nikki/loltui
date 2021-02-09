@@ -8,10 +8,14 @@ This is a proof-of-concept LoL assistant using a TUI-interface. When you join a 
 
 See LICENSE for terms of use.
 
-## Installation
+## Installation from GitHub
 
 1. `git clone git@github.com:j-nikki/loltui.git`
-2. `pip install loltui`
+2. `py -m pip install ./loltui`
+
+## Installation from PyPi
+
+1. `py -m pip install loltui`
 
 ## Usage
 
