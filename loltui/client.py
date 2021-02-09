@@ -4,6 +4,7 @@ import tempfile
 import time
 from contextlib import suppress
 from typing import Optional
+from urllib import request
 from urllib.request import urlopen
 
 import psutil
@@ -13,27 +14,33 @@ from loltui.output import *
 
 _divs = ['I', 'II', 'III', 'IV', 'V']
 
-class Client:
-    @staticmethod
-    def __get_port_and_token() -> tuple[str, str]:
-        out(f'waiting for client, press {ctell("Ctrl+C")} to abort')
-        while True:
-            with suppress(FileNotFoundError, StopIteration, psutil.NoSuchProcess):
-                proc = psutil.Process
-                exe = next(proc(c.pid).exe() for c in psutil.net_connections('tcp4') if proc(
-                    c.pid).name() == 'LeagueClient.exe' and c.status == 'LISTEN')
-                with open(os.path.join(os.path.dirname(exe), 'lockfile'), 'r') as f:
-                    _, _, port, token, _ = f.read().split(':')
-                out_rm()
-                return port, token
-            time.sleep(2)
+def _get(*args, **kwargs) -> requests.Response:
+    while (res := requests.get(*args, **kwargs)).status_code == 429:
+        # https://developer.riotgames.com/docs/portal#web-apis_4xx-error-codes
+        retry_after = float(res.headers['Retry-After'])
+        time.sleep(retry_after)
+    return res
 
+def _get_port_and_token() -> tuple[str, str]:
+    out(f'waiting for client, press {ctell("Ctrl+C")} to abort')
+    while True:
+        with suppress(FileNotFoundError, StopIteration, psutil.NoSuchProcess):
+            proc = psutil.Process
+            exe = next(proc(c.pid).exe() for c in psutil.net_connections('tcp4') if proc(
+                c.pid).name() == 'LeagueClient.exe' and c.status == 'LISTEN')
+            with open(os.path.join(os.path.dirname(exe), 'lockfile'), 'r') as f:
+                _, _, port, token, _ = f.read().split(':')
+            out_rm()
+            return port, token
+        time.sleep(2)
+
+class Client:
     def __init__(self):
         certfd, self.__cert = tempfile.mkstemp(suffix='.pem')
         os.write(certfd, urlopen(
             'https://static.developer.riotgames.com/docs/lol/riotgames.pem').read())
         os.close(certfd)
-        self.__port, self.__token = self.__get_port_and_token()
+        self.__port, self.__token = _get_port_and_token()
         self.__v = json.loads(urlopen(
             f'https://ddragon.leagueoflegends.com/realms/{self.get_dict("riotclient/region-locale")["region"].lower()}.json').read())['v']
         self.__cs = {int(x['key']): x for x in json.loads(urlopen(
@@ -41,8 +48,8 @@ class Client:
 
     def get(self, endpoint: str, **kwargs) -> requests.Response:
         try:
-            return requests.get(f'https://127.0.0.1:{self.__port}/{endpoint}', params=kwargs, headers={
-                                'Accept': 'application/json'}, auth=('riot', self.__token), verify=self.__cert)
+            return _get(f'https://127.0.0.1:{self.__port}/{endpoint}', params={**kwargs}, headers={
+                'Accept': 'application/json'}, auth=('riot', self.__token), verify=self.__cert)
         except Exception as e:
             out(f'{cyell(e.__class__.__name__)}: {ctell(e)}')
             exit(1)
@@ -55,7 +62,7 @@ class Client:
     def game(self, endpoint: str, **kwargs) -> Optional[dict]:
         port = 2999  # fixed port per Riot docs
         with suppress(requests.ConnectionError):
-            res = requests.get(f'https://127.0.0.1:{port}/{endpoint}', params=kwargs, headers={
+            res = _get(f'https://127.0.0.1:{port}/{endpoint}', params=kwargs, headers={
                 'Accept': 'application/json'}, verify=self.__cert)
             if res.status_code == 200:
                 return json.loads(res.content)
@@ -66,13 +73,15 @@ class Client:
         '''
         acc = info['accountId']
         ml = self.get_dict(f'lol-match-history/v1/friend-matchlists/{acc}')
-        gs = [g for g in ml['games']['games'][::-1] if g['queueId'] in (420, 440)]
+        gs = [g for g in ml['games']['games']
+              [::-1] if g['queueId'] in (420, 440)]
         def f(g):
-            pi = next(x['participantId'] for x in g['participantIdentities']
-                    if x['player']['accountId'] == acc)
-            return next(x['stats']['win']
-                        for x in g['participants'] if x['participantId'] == pi)
-        return [f(g) for g in gs]
+            with suppress(StopIteration):
+                pi = next(x['participantId'] for x in g['participantIdentities']
+                          if x['player']['accountId'] == acc)
+                return next(x['stats']['win']
+                            for x in g['participants'] if x['participantId'] == pi)
+        return list(filter(lambda x: x is not None, map(f, gs)))
 
     def id2player(self, sid: str) -> tuple[str, str, list]:
         '''

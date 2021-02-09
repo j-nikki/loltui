@@ -4,7 +4,7 @@ import threading
 from itertools import accumulate, chain
 from typing import Iterable, Union
 
-from loltui.data import *
+from loltui.client import *
 
 #
 # Player info presenter
@@ -101,6 +101,8 @@ class PlayerInfo():
             return f'{g(x[:a])}{x[a:b]}{g(x[b:])}'
 
         def champ(x: str):  # line 1: champ names
+            if not self.__champs[j]:
+                return g(x)
             key = self.__cl.champions[self.__champs[j]]['name']
             a = x.index(key)
             b = a + len(key)
