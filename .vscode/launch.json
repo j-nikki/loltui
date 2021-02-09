@@ -5,18 +5,18 @@
             "name": "loltui ndebug",
             "type": "python",
             "request": "launch",
-            "module": "loltui",
-            "cwd": "${workspaceFolder}/.."
+            "code": "import loltui.__main__",
+            "cwd": "${workspaceFolder}",
         },
         {
             "name": "loltui debug",
             "type": "python",
             "request": "launch",
-            "module": "loltui",
-            "cwd": "${workspaceFolder}/..",
+            "code": "import loltui.__main__",
             "args": [
                 "--debug"
-            ]
+            ],
+            "cwd": "${workspaceFolder}",
         }
     ]
 }

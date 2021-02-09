@@ -18,14 +18,20 @@ args = ap.parse_args()
 DEBUG = args.debug
 
 #
+# Client interfacing
+#
+
+client = Client()
+
+#
 # Session tab-keeper
 #
 
 class Session():
-    def __init__(
-            self, q: str, geom: tuple[int, int], sids: Iterable[int], cids: Iterable[int]):
+    def __init__(self, cl: Client, q: str,
+                 geom: tuple[int, int], sids: Iterable[int], cids: Iterable[int]):
         self.__q = q
-        self.__pi = PlayerInfo(geom, sids, self.__present)
+        self.__pi = PlayerInfo(cl, geom, sids, self.__present)
         self.__pi.update(cids)
 
     def __present(self):
@@ -44,7 +50,7 @@ class Session():
 # Session awaiting
 #
 
-champ2id = {v['name']: k for k, v in champions.items()}
+champ2id = {v['name']: k for k, v in client.champions.items()}
 def get_session_params(interval: float):
 
     if DEBUG:
@@ -95,7 +101,7 @@ try:
         out(f'waiting for session, press {ctell("Ctrl+C")} to abort')
         q, geom, sids, cids, cids_getter = get_session_params(1)
         out_rm()
-        ses = Session(q, geom, sids, cids)
+        ses = Session(client, q, geom, sids, cids)
         ses.loop(cids_getter, 1)
 except KeyboardInterrupt:
     pass

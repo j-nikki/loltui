@@ -13,17 +13,17 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     keywords="lol league of legends champ champion select",
     url="https://github.com/j-nikki/loltui",
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages('loltui'),
     python_requires='~=3.9',
     install_requires=[
         'requests',
         'psutil',
     ],
-    classifiers=(
+    classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",
         "License :: OSI Approved :: MIT License",
         "Operating System :: Microsoft :: Windows :: Windows 10",
         "Topic :: Games/Entertainment :: Real Time Strategy"
-    ),
+    ],
 )

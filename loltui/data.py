@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 from contextlib import suppress
 from typing import Optional
 from urllib.request import urlopen
@@ -10,22 +11,9 @@ import requests
 
 from loltui.output import *
 
-#
-# Client interfacing
-#
+_divs = ['I', 'II', 'III', 'IV', 'V']
 
 class Client:
-    __reg2platf = {
-        "BR": "BR1",
-        "UNE": "EUN1",
-        "EUW": "EUW1",
-        "LAN": "LA1",
-        "LAS": "LA2",
-        "NA": "NA1",
-        "OCE": "OC1",
-        "TR": "TR1",
-        "JP": "JP1"}
-
     @staticmethod
     def __get_port_and_token() -> tuple[str, str]:
         out(f'waiting for client, press {ctell("Ctrl+C")} to abort')
@@ -46,6 +34,10 @@ class Client:
             'https://static.developer.riotgames.com/docs/lol/riotgames.pem').read())
         os.close(certfd)
         self.__port, self.__token = self.__get_port_and_token()
+        self.__v = json.loads(urlopen(
+            f'https://ddragon.leagueoflegends.com/realms/{self.get_dict("riotclient/region-locale")["region"].lower()}.json').read())['v']
+        self.__cs = {int(x['key']): x for x in json.loads(urlopen(
+            f'https://ddragon.leagueoflegends.com/cdn/{self.__v}/data/en_US/champion.json').read())['data'].values()}
 
     def get(self, endpoint: str, **kwargs) -> requests.Response:
         try:
@@ -68,57 +60,44 @@ class Client:
             if res.status_code == 200:
                 return json.loads(res.content)
 
+    def wins_losses(self, info) -> list[bool]:
+        '''
+        Gets outcome of ranked games from 20 last games
+        '''
+        acc = info['accountId']
+        ml = self.get_dict(f'lol-match-history/v1/friend-matchlists/{acc}')
+        gs = [g for g in ml['games']['games'][::-1] if g['queueId'] in (420, 440)]
+        def f(g):
+            pi = next(x['participantId'] for x in g['participantIdentities']
+                    if x['player']['accountId'] == acc)
+            return next(x['stats']['win']
+                        for x in g['participants'] if x['participantId'] == pi)
+        return [f(g) for g in gs]
+
+    def id2player(self, sid: str) -> tuple[str, str, list]:
+        '''
+        Returns summoner info, rank, and masteries
+        '''
+        d = self.get_dict(f'lol-summoner/v1/summoners/{sid}')
+        q = self.get_dict(
+            f'lol-ranked/v1/ranked-stats/{d["puuid"]}')['queueMap']['RANKED_SOLO_5x5']
+        def fmt(t: str, d: str):
+            return f'{t[0].upper()}{_divs.index(d)+1}' if d != 'NA' else ''
+        rank = f'{fmt(q["previousSeasonEndTier"], q["previousSeasonEndDivision"])}→{fmt(q["tier"], q["division"])}'
+        cm = self.get_dict(
+            f'lol-collections/v1/inventories/{d["summonerId"]}/champion-mastery')
+        return d, rank if rank != '→' else '', cm
+
     def __del__(self):
         os.remove(self.__cert)
 
-client = Client()
+    @property
+    def version(self) -> str:
+        return self.__v
 
-#
-# Champion data
-#
-
-vdata = json.loads(urlopen(
-    f'https://ddragon.leagueoflegends.com/realms/{client.get_dict("riotclient/region-locale")["region"].lower()}.json').read())['v']
-out(f'game data version is {ctell(vdata)}')
-champions = {int(x['key']): x for x in json.loads(urlopen(
-    f'https://ddragon.leagueoflegends.com/cdn/{vdata}/data/en_US/champion.json').read())['data'].values()}
-
-#
-# Queue data
-#
+    @property
+    def champions(self) -> dict[int, dict]:
+        return self.__cs
 
 qdata = {x['queueId']: x for x in json.loads(urlopen(
     'https://static.developer.riotgames.com/docs/lol/queues.json').read())}
-
-#
-# Summoner data
-#
-
-def wins_losses(info) -> list[bool]:
-    '''
-    Gets outcome of ranked games from 20 last games
-    '''
-    acc = info['accountId']
-    ml = client.get_dict(f'lol-match-history/v1/friend-matchlists/{acc}')
-    gs = [g for g in ml['games']['games'][::-1] if g['queueId'] in (420, 440)]
-    def f(g):
-        pi = next(x['participantId'] for x in g['participantIdentities']
-                  if x['player']['accountId'] == acc)
-        return next(x['stats']['win']
-                    for x in g['participants'] if x['participantId'] == pi)
-    return [f(g) for g in gs]
-
-divs = ['I', 'II', 'III', 'IV', 'V']
-def id2player(sid: str) -> tuple[str, str, list]:
-    '''
-    Returns summoner info, rank, and masteries
-    '''
-    d = client.get_dict(f'lol-summoner/v1/summoners/{sid}')
-    q = client.get_dict(
-        f'lol-ranked/v1/ranked-stats/{d["puuid"]}')['queueMap']['RANKED_SOLO_5x5']
-    def fmt(t: str, d: str):
-        return f'{t[0].upper()}{divs.index(d)+1}' if d != 'NA' else ''
-    rank = f'{fmt(q["previousSeasonEndTier"], q["previousSeasonEndDivision"])}→{fmt(q["tier"], q["division"])}'
-    cm = client.get_dict(
-        f'lol-collections/v1/inventories/{d["summonerId"]}/champion-mastery')
-    return d, rank if rank != '→' else '', cm

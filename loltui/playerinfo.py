@@ -10,8 +10,7 @@ from loltui.data import *
 # Player info presenter
 #
 
-champions[-1] = {'name': '...'}  # dummy champion (e.g. when none picked)
-crank = {  # rank colorizers
+_crank = {  # rank colorizers
     'I': colorizer(8),
     'B': colorizer(95),
     'S': colorizer(102),
@@ -24,14 +23,15 @@ class PlayerInfo():
     __prank = re.compile(r'\t(\w\d)?(→)?(\w\d)?')
 
     def __wl_calc(self):
-        for i, wl in enumerate(wins_losses(x[0]) for x in self.__ps):
+        for i, wl in enumerate(self.__cl.wins_losses(x[0]) for x in self.__ps):
             if wl:
                 self.__q.put((i, wl))
 
-    def __init__(self, geom: tuple[int, int],
+    def __init__(self, client: Client, geom: tuple[int, int],
                  summoner_ids: Iterable[str], show_fn):
+        self.__cl = client
         self.__sep = geom[0]
-        self.__ps = [id2player(x) for x in summoner_ids]
+        self.__ps = [client.id2player(x) for x in summoner_ids]
         self.__wl = [[] for _ in self.__ps]
         self.__seek = out_sz()
         self.__champs = []
@@ -51,7 +51,7 @@ class PlayerInfo():
             champs.append({
                 'championId': self.__champs[i],
                 'championPoints': 0 if idx == -1 else self.__ps[i][2][idx]['championPoints']})
-        top = f'{name}{T}│ {T.join(champions[c["championId"]]["name"] for c in champs[:10])}{T}'
+        top = f'{name}{T}│ {T.join(d["name"] if (d := self.__cl.champions.get(c["championId"])) else "..." for c in champs[:10])}{T}'
         bot = f'{"".join("01"[y] for y in self.__wl[i])}{T}│ {T.join(str(c["championPoints"]//1000)+"K" for c in champs[:10])}{T}'
         return (T + '┼' + '\0' * 11, top,
                 bot) if i == self.__sep else (top, bot)
@@ -101,7 +101,7 @@ class PlayerInfo():
             return f'{g(x[:a])}{x[a:b]}{g(x[b:])}'
 
         def champ(x: str):  # line 1: champ names
-            key = champions[self.__champs[j]]['name']
+            key = self.__cl.champions[self.__champs[j]]['name']
             a = x.index(key)
             b = a + len(key)
             return f'{g(x[:a])}{t(x[a:b])}{g(x[b:])}'
@@ -114,7 +114,7 @@ class PlayerInfo():
             return f'{wl}{pts(j, x[nwl:])}'
 
         m = self.__prank.search(x)
-        def color(y): return crank[y[0]](y)
+        def color(y): return _crank[y[0]](y)
         rank = f'{color(m[1]) if m[1] else ""}{cgray(m[2]) if m[2] else ""}{color(m[3]) if m[3] else ""}'
         a, b = m.span()
         return f'{t(x[:a])} {rank}{champ(x[b:])}'
