@@ -1,6 +1,9 @@
 import sys
 
-if sys.argv[1:] == ('--exe'):
+if sys.argv[1:] == ['--exe']:
+    if input("Additional files will be downloaded. Continue (y)? ") != 'y':
+        exit(0)
+
     import io
     import os
     import tempfile
@@ -9,13 +12,16 @@ if sys.argv[1:] == ('--exe'):
     import subprocess
 
     with tempfile.TemporaryDirectory() as d_tmp:
+
+        print('Downloading UPX 3.96')
         r = requests.get(
             'https://github.com/upx/upx/releases/download/v3.96/upx-3.96-win64.zip')
         with zipfile.ZipFile(io.BytesIO(r.content)) as z:
             z.extract('upx-3.96-win64/upx.exe', d_tmp)
-        d_src = os.path.dirname(sys.argv[0])
 
+        print('  Done\nEngaging venv')
         subprocess.call([sys.executable, '-m', 'venv', d_tmp])
+
         subprocess.call([os.path.join(d_tmp,
                                       'Scripts',
                                       'pip'),
@@ -24,6 +30,8 @@ if sys.argv[1:] == ('--exe'):
                          'PyInstaller',
                          'psutil',
                          'requests'])
+
+        d_src = os.path.dirname(__file__)
         subprocess.call([os.path.join(d_tmp, 'Scripts', 'python'), '-OO', '-m', 'PyInstaller',
                          os.path.join(d_src, 'loltui.py'),
                          '-F',
@@ -39,6 +47,6 @@ if sys.argv[1:] == ('--exe'):
                          '-p',
                          d_src,
                          '-i',
-                         os.path.join(d_src, 'images', 'icon.ico')])
+                         os.path.join(d_src, '..', 'images', 'icon.ico')])
 else:
     import loltui.loltui
