@@ -39,17 +39,18 @@ def out_rm(n: int = 1):
 
 def aligned(l: list[str]):
     idx = [x.find('\0') for x in l]
-    m = max(0, *idx)
+    if (m := max(idx, default=-1)) == -1:
+        return l
     for i, j in enumerate(idx):
         if j != -1:
             l[i] = f'{l[i][:j]}{" "*(m - j)}{l[i][j+1:]}'
-    return m and aligned(l) or l
+    return aligned(l)
 
 # https://en.wikipedia.org/wiki/Box-drawing_character
 def box(*l, post=lambda i, x: x, min_width=40, title=None):
     l = aligned([str(x).rstrip() for x in l])
-    w = max(min_width, *map(len, l))
     title = f'╼{title}╾' if title else ""
+    w = max((min_width, len(title), *map(len, l)))
     res = cgray(f'╭{title}{"─"*(w-len(title) +2)}╮')
     for i, ln in enumerate(l):
         res = f'{res}\n{cgray("│ ")}{post(i, ln)}{" "*(w-len(ln))} {cgray("│")}'
