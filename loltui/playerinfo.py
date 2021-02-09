@@ -19,7 +19,7 @@ _crank = {  # rank colorizers
     'D': colorizer(14),
     'M': colorizer(12),
     'C': colorizer(50)}
-class PlayerInfo():
+class PlayerInfo:
     __prank = re.compile(r'\t(\w\d)?(→)?(\w\d)?')
 
     def __wl_calc(self):

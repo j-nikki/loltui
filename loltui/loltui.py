@@ -29,7 +29,7 @@ client = Client()
 # Session tab-keeper
 #
 
-class Session():
+class Session:
     def __init__(self, cl: Client, q: str,
                  geom: tuple[int, int], sids: Iterable[int], cids: Iterable[int]):
         self.__q = q

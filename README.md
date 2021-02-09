@@ -29,4 +29,4 @@ See LICENSE for terms of use.
 ## Acknowledgments
 
 League of Legends is a Riot Games product. loltui is not associated with Riot Games.
-<a target="_blank" href="https://icons8.com/icons/set/console">Console icon</a> icon by <a target="_blank" href="https://icons8.com">Icons8</a>
+<a target="_blank" href="https://icons8.com/icons/set/console">Console icon</a> icon by <a target="_blank" href="https://icons8.com">Icons8</a>.
