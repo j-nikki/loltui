@@ -2,19 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "loltui ndebug",
+            "name": "loltui ndemo",
             "type": "python",
             "request": "launch",
-            "code": "import loltui.__main__",
+            "module": "loltui",
             "cwd": "${workspaceFolder}",
         },
         {
-            "name": "loltui debug",
+            "name": "loltui demo",
             "type": "python",
             "request": "launch",
-            "code": "import loltui.__main__",
+            "module": "loltui",
             "args": [
-                "--debug"
+                "-d", "demo.json"
             ],
             "cwd": "${workspaceFolder}",
         }

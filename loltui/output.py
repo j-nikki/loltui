@@ -1,4 +1,4 @@
-import os
+import sys
 
 #
 # Colored output
@@ -18,20 +18,23 @@ cgray = colorizer(239)
 _outbuf = []
 
 def out_init():
-    os.system('clear')
+    pass
 
 def out(*args):
-    _outbuf.append('\t'.join(map(str, args)))
-    print(_outbuf[-1])
+    msg = '\t'.join(map(str, args))
+    _outbuf.append(msg)
+    sys.stdout.write(f'{msg}\n')
 
 def out_sz() -> int:
     return len(_outbuf)
 
 def out_rm(n: int = 1):
+    assert n > 0
+    lns = n + sum(x.count('\n') for x in _outbuf[-n:])
     del _outbuf[-n:]
-    os.system('clear')
-    if _outbuf:
-        print('\n'.join(_outbuf))
+    CSI = '\033['
+    LF = '\n'
+    sys.stdout.write(f'{CSI}{lns}A{CSI}J{LF.join(_outbuf)}')
 
 #
 # Columned table

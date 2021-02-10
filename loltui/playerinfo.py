@@ -63,7 +63,8 @@ class PlayerInfo:
         return chain.from_iterable(map(self.__get, range(len(self.__champs))))
 
     def clear(self):
-        out_rm(-self.__seek)
+        if n := out_sz() - self.__seek:
+            out_rm(n)
 
     def update(self, cids: list[int]):
         '''
