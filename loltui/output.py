@@ -1,4 +1,5 @@
 import sys
+from typing import Iterable
 
 #
 # Colored output
@@ -15,46 +16,47 @@ cgray = colorizer(239)
 # Mutable display output
 #
 
-_outbuf = []
+_buf = []
+_w = sys.stdout.write
+CSI, LF = '\033[', '\n'
 
 def out_init():
     pass
 
-def out(*args):
-    msg = '\t'.join(map(str, args))
-    _outbuf.append(msg)
-    sys.stdout.write(f'{msg}\n')
+def out(x: Iterable[str]):
+    start = len(_buf)
+    _buf.extend([x] if isinstance(x, str) else x)
+    _w(f'{LF.join(_buf[start:])}{LF}')
 
 def out_sz() -> int:
-    return len(_outbuf)
+    return len(_buf)
 
+# https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_(Control_Sequence_Introducer)_sequences
 def out_rm(n: int = 1):
     assert n > 0
-    lns = n + sum(x.count('\n') for x in _outbuf[-n:])
-    del _outbuf[-n:]
-    CSI = '\033['
-    LF = '\n'
-    sys.stdout.write(f'{CSI}{lns}A{CSI}J{LF.join(_outbuf)}')
+    del _buf[-n:]
+    _w(f'{CSI}{n}A{CSI}J{LF.join(_buf)}')
 
 #
 # Columned table
 #
 
-def aligned(l: list[str]):
+def _aligned(l: list[str]):
     idx = [x.find('\0') for x in l]
     if (m := max(idx, default=-1)) == -1:
         return l
     for i, j in enumerate(idx):
         if j != -1:
             l[i] = f'{l[i][:j]}{" "*(m - j)}{l[i][j+1:]}'
-    return aligned(l)
+    return _aligned(l)
 
 # https://en.wikipedia.org/wiki/Box-drawing_character
-def box(*l, post=lambda i, x: x, min_width=40, title=None):
-    l = aligned([str(x).rstrip() for x in l])
+def box(*l, post=lambda i, x: x, title=None):
+    l = _aligned([str(x).rstrip() for x in l])
     title = f'╼{title}╾' if title else ""
-    w = max((min_width, len(title), *map(len, l)))
-    res = cgray(f'╭{title}{"─"*(w-len(title) +2)}╮')
-    for i, ln in enumerate(l):
-        res = f'{res}\n{cgray("│ ")}{post(i, ln)}{" "*(w-len(ln))} {cgray("│")}'
-    out(f'{res}\n{cgray("╰"+"─"*(w+2)+"╯")}')
+    w = max((len(title), *map(len, l)))
+    out([
+        cgray(f'╭{title}{"─"*(w-len(title) +2)}╮'),
+        *[f'{cgray("│ ")}{post(i, ln)}{" "*(w-len(ln))} {cgray("│")}' for i,
+          ln in enumerate(l)],
+        f'{cgray("╰"+"─"*(w+2)+"╯")}'])

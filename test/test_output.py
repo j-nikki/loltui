@@ -1,5 +1,5 @@
 from loltui.output import *
-from loltui.output import _outbuf
+from loltui.output import _buf
 
 out_init()
 
@@ -20,15 +20,15 @@ class TestOutput:
     def test_box_empty(self):
         assert out_sz() == 0
         box(min_width=0)
-        assert _outbuf[-1] == f'{cgray("╭──╮")}\n{cgray("╰──╯")}'
+        assert _buf[-1] == f'{cgray("╭──╮")}\n{cgray("╰──╯")}'
         box(min_width=1)
-        assert _outbuf[-1] == f'{cgray("╭───╮")}\n{cgray("╰───╯")}'
+        assert _buf[-1] == f'{cgray("╭───╮")}\n{cgray("╰───╯")}'
         out_rm(2)
         assert out_sz() == 0
 
     def test_box_title(self):
         assert out_sz() == 0
         box(title='åäö', min_width=0)
-        assert _outbuf[-1] == f'{cgray("╭╼åäö╾──╮")}\n{cgray("╰───────╯")}'
+        assert _buf[-1] == f'{cgray("╭╼åäö╾──╮")}\n{cgray("╰───────╯")}'
         out_rm(2)
         assert out_sz() == 0
