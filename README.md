@@ -10,8 +10,7 @@ See LICENSE for terms of use.
 
 ## Installation from GitHub
 
-1. `git clone git@github.com:j-nikki/loltui.git`
-2. `py -m pip install ./loltui`
+1. `py -m pip install git+https://github.com/j-nikki/loltui.git`
 
 ## Installation from PyPi
 
@@ -20,11 +19,6 @@ See LICENSE for terms of use.
 ## Usage
 
 1. `py -m loltui --help`
-
-## Creating EXE
-
-1. `py -m loltui --exe` (undocumented flag)
-2. Use created `loltui.exe`
 
 ## Acknowledgments
 

@@ -13,7 +13,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     keywords="lol league of legends champ champion select",
     url="https://github.com/j-nikki/loltui",
-    packages=setuptools.find_packages('loltui'),
+    packages=setuptools.find_packages('.', exclude='test'),
     python_requires='~=3.9',
     install_requires=[
         'requests',
