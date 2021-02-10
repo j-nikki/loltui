@@ -69,14 +69,17 @@ def get_session_params(interval: float):
         return client.get(
             'lol-gameflow/v1/gameflow-phase').content == b'"InProgress"'
 
+    def get_ses():
+        if (d := client.get_dict(
+                'lol-lobby-team-builder/champ-select/v1/session')) and 'myTeam' in d:
+            return d
+
     while True:
-        if d := client.get_dict(
-                'lol-lobby-team-builder/champ-select/v1/session'):
+        if d := get_ses():
             q = qdata[client.get_dict(
                 'lol-lobby-team-builder/v1/matchmaking')['queueId']]['description'].rstrip(' games')
             def get_cids():
-                if d := client.get_dict(
-                        'lol-lobby-team-builder/champ-select/v1/session'):
+                if d := get_ses():
                     return [x['championId'] for x in d['myTeam']]
             return q, (len(d['myTeam']), 0), [x['summonerId'] for x in d['myTeam']], [
                 x['championId'] for x in d['myTeam']], get_cids
