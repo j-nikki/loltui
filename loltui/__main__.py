@@ -1,5 +1,5 @@
+import argparse
 import time
-from argparse import ArgumentParser
 from itertools import chain
 from typing import Iterable
 
@@ -9,18 +9,16 @@ from loltui.playerinfo import *
 # Process args
 #
 
-ap = ArgumentParser(
+ap = argparse.ArgumentParser(
     description="gives info about the players you're playing with")
-ap.add_argument('--debug', '-d', action='store_true',
-                help='supply the program with demo data')
+ap.add_argument('--demo', '-d', type=argparse.FileType('r', encoding='U8'),
+                help='supply the program with JSON file where ["myTeam"] = [{"summonerId":<id>, "championId":<id>}...]')
 ap.add_argument('--exe', action='store_true',
                 help='compile loltui to an executable')
 args = ap.parse_args()
 
 if args.exe:
     from loltui import exe
-
-DEBUG = args.debug
 
 out_init()
 
@@ -60,10 +58,9 @@ class Session:
 champ2id = {v['name']: k for k, v in client.champions.items()}
 def get_session_params(interval: float):
 
-    if DEBUG:
-        # Debug stats (champ select sample)
-        from loltui.debugdata import champ_select
-        d, q = champ_select
+    if args.demo:
+        with args.demo as f:
+            d, q = json.load(f), 'Demo'
         cids = [x['championId'] for x in d['myTeam']]
         return q, (5, 0), [x['summonerId']
                            for x in d['myTeam']], cids, lambda: cids
