@@ -55,9 +55,9 @@ class Client:
             exit(1)
 
     def get_dict(self, endpoint: str, **kwargs) -> dict:
-        resp = self.get(endpoint, **kwargs)
-        return {} if resp.status_code == 404 else json.loads(
-            self.get(endpoint, **kwargs).content)
+        if (resp := self.get(endpoint, **kwargs)).status_code != 404:
+            return json.loads(resp.content)
+        return {}
 
     def game(self, endpoint: str, **kwargs) -> Optional[dict]:
         port = 2999  # fixed port per Riot docs
