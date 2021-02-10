@@ -54,7 +54,7 @@ class PlayerInfo:
             name = info['displayName'] + '\t' + rank
             if i == self.__sep:
                 yield '\0 ┼' + '\0' * 11
-            if not self.__champs[i] or idx is not None and idx > 9:
+            if self.__champs[i] and (idx is None or idx > 9):
                 yield f'{name}{T}│ {T.join(cname(c["championId"]) for c in cs[:8])}{T}...{T}{cname(self.__champs[i])}{T}'
                 pts = cs[idx]['championPoints'] // 1000 if idx else 0
                 yield f'{self.__wl[i]}{T}│ {T.join(str(c["championPoints"]//1000)+"K" for c in cs[:8])}{T}...{T}{pts}K{T}'
