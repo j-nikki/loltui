@@ -1,5 +1,6 @@
 from threading import Lock
 
+
 class Dict(dict):
     def __init__(self):
         super().__init__()

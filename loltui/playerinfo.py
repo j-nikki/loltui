@@ -26,13 +26,12 @@ _rune_work = set()
 
 class PlayerInfo:
     def __wl_calc(self):
-        for i, wl in enumerate(self.__cl.wins_losses(x[0]) for x in self.__ps):
+        for i, wl in enumerate(client.wins_losses(x[0]) for x in self.__ps):
             if wl:
                 self.__qwl.put((i, ''.join(map(str, map(int, wl)))))
 
-    def __init__(self, client: Client, geom: tuple[int, int],
+    def __init__(self, geom: tuple[int, int],
                  summoner_ids: Iterable[str], show_fn):
-        self.__cl = client
         self.__sep = geom[0]
         self.__ps = [client.id2player(x) for x in summoner_ids]
         self.__cid2mi = [{x['championId']: i for i,
@@ -40,9 +39,11 @@ class PlayerInfo:
         self.__wl = ['' for _ in self.__ps]
         self.__seek = out_sz()
         self.__champs = []
+        self.__csc = None
+        self.__runemsg = ''
         self.__show_fn = show_fn
         self.__qwl = queue.Queue()
-        cs_sid = client.get_dict(
+        cs_sid = client.get_json(
             'lol-summoner/v1/current-summoner')['summonerId']
         self.__csidx = next(i for i, (d, _, _) in enumerate(
             self.__ps) if d['summonerId'] == cs_sid)
@@ -53,7 +54,7 @@ class PlayerInfo:
         Returns all lines of the table. Use self.post() for post-processing.
         '''
         T = '\0 '  # 0-terminator, used for aligning info
-        cg = self.__cl.champions.__getitem__
+        cg = client.champions.__getitem__
         def cname(c: int) -> str:
             return cg(c)['name']
         for i in range(len(self.__champs)):
@@ -78,7 +79,8 @@ class PlayerInfo:
         with suppress(KeyError):
             while True:
                 cid = _rune_work.pop()
-                if runes := get_runes(self.__cl.champions[cid]['name']):
+                cname = client.champions[cid]['name']
+                if runes := get_runes(cname):
                     _runes.write(cid, runes)
         self.__champs = []
 
@@ -99,17 +101,18 @@ class PlayerInfo:
             self.__champidx = list(x.get(y)
                                    for x, y in zip(self.__cid2mi, cids))
             self.__show_fn()
-            if csc := cids[self.__csidx]:
+            csc = cids[self.__csidx]
+            if csc:
                 if _runes.write(csc, [], False):
-                    out(cgray('Retrieving runes...'))
                     if not _rune_work:
                         threading.Thread(target=self.__rune_fetch).start()
                     _rune_work.add(csc)
                 elif runes := _runes[csc]:
-                    cscname = self.__cl.champions[csc]["name"]
-                    out(f'{cgray("Most frequent runes for ")}{ctell(cscname)}{cgray(": ")}{cgray(", ").join(runes)}')
-                else:
-                    out(cgray('Retrieving runes...'))
+                    if self.__csc != csc:
+                        self.__runemsg = apply_runes(
+                            client.champions[csc]["name"], runes)
+                        self.__csc = csc
+                    out(self.__runemsg)
 
     def post(self, i: int, x: str):
         '''
@@ -140,7 +143,7 @@ class PlayerInfo:
         def champ(x: str):
             if not self.__champs[j]:
                 return g(x)
-            key = self.__cl.champions[self.__champs[j]]['name']
+            key = client.champions[self.__champs[j]]['name']
             a = x.index(key)
             b = a + len(key)
             return f'{g(x[:a])}{t(x[a:b])}{g(x[b:])}'

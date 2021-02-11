@@ -1,13 +1,23 @@
+import os
 import sys
-from typing import Iterable
+from typing import Iterable, Optional
+
+CSI, LF = '\033[', '\n'
 
 #
 # Colored output
 #
 
+if os.name == 'nt':
+    os.system('color')
+
 # https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
-def colorizer(code: int):
-    return lambda x: '\033[38;5;' + str(code) + 'm' + str(x) + '\033[0m'
+def colorizer(fg: int, bg: Optional[int] = None):
+    if not bg:
+        return lambda x: f'{CSI}38;5;{fg}m{x}{CSI}m'
+    return lambda x: f'{CSI}38;5;{fg}m{CSI}48;5;{bg}m{x}{CSI}m'
+
+
 cyell = colorizer(129)
 ctell = colorizer(214)
 cgray = colorizer(239)
@@ -18,10 +28,6 @@ cgray = colorizer(239)
 
 _buf = []
 _w = sys.stdout.write
-CSI, LF = '\033[', '\n'
-
-def out_init():
-    pass
 
 def out(x: Iterable[str]):
     start = len(_buf)
