@@ -1,9 +1,11 @@
 import queue
 import re
 import threading
-from typing import Iterable, Union
+from typing import Iterable
 
 from loltui.client import *
+from loltui.dict import *
+from loltui.runes import *
 
 #
 # Player info presenter
@@ -19,12 +21,14 @@ _crank = {  # rank colorizers
     'D': colorizer(14),
     'M': colorizer(12),
     'C': colorizer(50)}
+_runes = Dict()
+_rune_work = set()
 
 class PlayerInfo:
     def __wl_calc(self):
         for i, wl in enumerate(self.__cl.wins_losses(x[0]) for x in self.__ps):
             if wl:
-                self.__q.put((i, ''.join(map(str, map(int, wl)))))
+                self.__qwl.put((i, ''.join(map(str, map(int, wl)))))
 
     def __init__(self, client: Client, geom: tuple[int, int],
                  summoner_ids: Iterable[str], show_fn):
@@ -37,7 +41,11 @@ class PlayerInfo:
         self.__seek = out_sz()
         self.__champs = []
         self.__show_fn = show_fn
-        self.__q = queue.Queue()
+        self.__qwl = queue.Queue()
+        cs_sid = client.get_dict(
+            'lol-summoner/v1/current-summoner')['summonerId']
+        self.__csidx = next(i for i, (d, _, _) in enumerate(
+            self.__ps) if d['summonerId'] == cs_sid)
         threading.Thread(target=self.__wl_calc, daemon=True).start()
 
     def get(self) -> Iterable[str]:
@@ -66,19 +74,42 @@ class PlayerInfo:
         if n := out_sz() - self.__seek:
             out_rm(n)
 
+    def __rune_fetch(self):
+        with suppress(KeyError):
+            while True:
+                cid = _rune_work.pop()
+                if runes := get_runes(self.__cl.champions[cid]['name']):
+                    _runes.write(cid, runes)
+        self.__champs = []
+
     def update(self, cids: list[int]):
         '''
         Updates the presented table to match given champ selections
         '''
-        while not self.__q.empty():
-            i, wl = self.__q.get()
+
+        # Get any finished win-loss calculations
+        while not self.__qwl.empty():
+            i, wl = self.__qwl.get()
             self.__wl[i] = wl
             self.__champs = []
+
+        # Re-render if necessary
         if self.__champs != cids:
             self.__champs = cids
             self.__champidx = list(x.get(y)
                                    for x, y in zip(self.__cid2mi, cids))
             self.__show_fn()
+            if csc := cids[self.__csidx]:
+                if _runes.write(csc, [], False):
+                    out(cgray('Retrieving runes...'))
+                    if not _rune_work:
+                        threading.Thread(target=self.__rune_fetch).start()
+                    _rune_work.add(csc)
+                elif runes := _runes[csc]:
+                    cscname = self.__cl.champions[csc]["name"]
+                    out(f'{cgray("Most frequent runes for ")}{ctell(cscname)}{cgray(": ")}{cgray(", ").join(runes)}')
+                else:
+                    out(cgray('Retrieving runes...'))
 
     def post(self, i: int, x: str):
         '''
@@ -92,7 +123,8 @@ class PlayerInfo:
             i -= 1
         j = i // 2  # player idx
 
-        def pts(i, x: str):  # line 2: mastery points
+        # Line 2: mastery points
+        def pts(i, x: str):
             if (ell := x.find('...')) != -1:
                 return f'{g(x[:ell])}   {x[ell+3:]}'
             if (idx := self.__champidx[j]) is None:
@@ -104,7 +136,8 @@ class PlayerInfo:
             a = x.rindex(' ', 0, b)
             return f'{g(x[:a])}{x[a:b]}{g(x[b:])}'
 
-        def champ(x: str):  # line 1: champ names
+        # Line 1: champ names
+        def champ(x: str):
             if not self.__champs[j]:
                 return g(x)
             key = self.__cl.champions[self.__champs[j]]['name']
@@ -112,15 +145,15 @@ class PlayerInfo:
             b = a + len(key)
             return f'{g(x[:a])}{t(x[a:b])}{g(x[b:])}'
 
-        if i % 2:  # odd line idx
+        if i % 2:  # odd idx => line 2
             if i == len(self.__champs) * 2 - 1:
                 self.clear()
             nwl = x.index(' ')
             wl = ''.join((t if y == '1' else g)('•') for y in x[:nwl])
             return f'{wl}{pts(j, x[nwl:])}'
-
-        m = _prank.search(x)
-        def color(y): return _crank[y[0]](y)
-        rank = f'{color(m[1]) if m[1] else ""}{cgray(m[2]) if m[2] else ""}{color(m[3]) if m[3] else ""}'
-        a, b = m.span()
-        return f'{t(x[:a])} {rank}{champ(x[b:])}'
+        else:  # even idx => line 1
+            m = _prank.search(x)
+            def color(y): return _crank[y[0]](y)
+            rank = f'{color(m[1]) if m[1] else ""}{cgray(m[2]) if m[2] else ""}{color(m[3]) if m[3] else ""}'
+            a, b = m.span()
+            return f'{t(x[:a])} {rank}{champ(x[b:])}'

@@ -46,18 +46,20 @@ class Client:
         self.__cs = {int(x['key']): x for x in json.loads(urlopen(
             f'https://ddragon.leagueoflegends.com/cdn/{self.__v}/data/en_US/champion.json').read())['data'].values()}
 
-    def get(self, endpoint: str, **kwargs) -> requests.Response:
+    def get(self, endpoint: str, **kwargs) -> bytes:
         try:
-            return _get(f'https://127.0.0.1:{self.__port}/{endpoint}', params={**kwargs}, headers={
+            resp = _get(f'https://127.0.0.1:{self.__port}/{endpoint}', params={**kwargs}, headers={
                 'Accept': 'application/json'}, auth=('riot', self.__token), verify=self.__cert)
+            if resp.status_code != 200:
+                out(f'got response code {cyell(resp.status_code)} from LeagueClient.exe {cgray(f"({endpoint=})")}')
+                exit(1)
+            return resp.content
         except Exception as e:
             out(f'{cyell(e.__class__.__name__)}: {ctell(e)}')
             exit(1)
 
     def get_dict(self, endpoint: str, **kwargs) -> dict:
-        if (resp := self.get(endpoint, **kwargs)).status_code != 404:
-            return json.loads(resp.content)
-        return {}
+        return json.loads(self.get(endpoint, **kwargs))
 
     def game(self, endpoint: str, **kwargs) -> Optional[dict]:
         port = 2999  # fixed port per Riot docs
@@ -83,7 +85,7 @@ class Client:
                             for x in g['participants'] if x['participantId'] == pi)
         return list(filter(lambda x: x is not None, map(f, gs)))
 
-    def id2player(self, sid: str) -> tuple[str, str, list]:
+    def id2player(self, sid: str) -> tuple[dict, str, list]:
         '''
         Returns summoner info, rank, and masteries
         '''

@@ -1,7 +1,7 @@
 import argparse
 import time
 from itertools import chain
-from typing import Iterable
+from typing import Callable, Iterable
 
 from loltui.playerinfo import *
 
@@ -56,18 +56,20 @@ class Session:
 #
 
 champ2id = {v['name']: k for k, v in client.champions.items()}
-def get_session_params(interval: float):
+def get_session_params(interval: float) -> tuple[tuple, Callable]:
+    '''
+    Returns the params to Session instance as well as a champion ID querier
+    '''
 
     if args.demo:
         with args.demo as f:
             d, q = json.load(f), 'Demo'
         cids = [x['championId'] for x in d['myTeam']]
-        return q, (5, 0), [x['summonerId']
-                           for x in d['myTeam']], cids, lambda: cids
+        return (q, (5, 0), [x['summonerId']
+                           for x in d['myTeam']], cids), lambda: cids
 
     def ingame() -> bool:
-        return client.get(
-            'lol-gameflow/v1/gameflow-phase').content == b'"InProgress"'
+        return client.get('lol-gameflow/v1/gameflow-phase') == b'"InProgress"'
 
     def get_ses():
         if (d := client.get_dict(
@@ -81,8 +83,8 @@ def get_session_params(interval: float):
             def get_cids():
                 if d := get_ses():
                     return [x['championId'] for x in d['myTeam']]
-            return q, (len(d['myTeam']), 0), [x['summonerId'] for x in d['myTeam']], [
-                x['championId'] for x in d['myTeam']], get_cids
+            return (q, (len(d['myTeam']), 0), [x['summonerId'] for x in d['myTeam']], [
+                x['championId'] for x in d['myTeam']]), get_cids
 
         if d := client.game('liveclientdata/allgamedata'):
             d = {x['summonerName']: x['championName'] for x in d['allPlayers']}
@@ -94,8 +96,8 @@ def get_session_params(interval: float):
             q = qdata.get(gd['queue']['id'], {'description': 'Custom'})[
                 'description'].removesuffix(' games')
             cids = [champ2id[d[x['summonerName']]] for x in ps]
-            return q, g, [int(x['summonerId'])
-                          for x in ps], cids, lambda: ingame() and cids
+            return (q, g, [int(x['summonerId'])
+                          for x in ps], cids), lambda: ingame() and cids
 
         time.sleep(interval)
 
@@ -106,9 +108,9 @@ def get_session_params(interval: float):
 try:
     while True:
         out(f'waiting for session, press {ctell("Ctrl+C")} to abort')
-        q, geom, sids, cids, cids_getter = get_session_params(1)
+        params, cids_getter = get_session_params(1)
         out_rm()
-        ses = Session(client, q, geom, sids, cids)
+        ses = Session(client, *params)
         ses.loop(cids_getter, 1)
 except KeyboardInterrupt:
     pass
