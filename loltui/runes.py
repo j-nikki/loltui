@@ -1,4 +1,5 @@
 import re
+from itertools import groupby
 from typing import Optional
 
 import requests
@@ -9,55 +10,51 @@ from loltui.output import *
 _headers = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/50.0.2661.102 Safari/537.36'}
 
-_prunetbl = re.compile(
-    r'^\s*<table class="perksTableContainerTable">([\s\S]*?)^\s*</table>',
-    flags=re.MULTILINE)
-_prune = re.compile(r'<div( style="")?.+\n.+?\/([0-9]+)\.png"(.+opacity: ?1)?')
+_prunetbl = re.compile(r'<div class="perk-page__row">([\s\S]+?)</td>')
+_prune = re.compile(r'perk(Shard)?\/([0-9]+)\.png\?image=q_auto')
 
 _2style = [{perk: style['id'] for slot in style['slots']
             for perk in slot['perks']} for style in client.get_json('lol-perks/v1/styles')]
 _commonperks = [x for x in _2style[0] if x in _2style[1]]
 _2style = {k: v for d in _2style for k, v in d.items() if k not in _commonperks}
-
 _2name = {perk['id']: perk['name']
           for perk in client.get_json('lol-perks/v1/perks')}
 
-_cperk = {
-    8000: colorizer(
-        0, 214), 8100: colorizer(
-            0, 160), 8200: colorizer(
-                0, 135), 8400: colorizer(
-                    0, 70), 8300: colorizer(
-                        0, 75)}
-_cdef = colorizer(0, 248)
+_cperk = {8000: 214, 8100: 9, 8200: 177, 8400: 154, 8300: 75, None: 251}
 
-def get_runes(champ: str) -> Optional[list[int]]:
+def get_runes(champ: str, role: str) -> Optional[list[int]]:
     try:
         resp = requests.get(
-            f'https://www.leagueofgraphs.com/champions/runes/{champ.lower()}',
+            f'https://www.op.gg/champion/{champ}/statistics/{role}/rune',
             headers=_headers)
         tbl = _prunetbl.search(resp.content.decode('U8'))[1]
-        return [int(m[2]) for m in _prune.finditer(tbl) if m[1] or m[3]]
+        res = [int(m[2]) for m in _prune.finditer(tbl)]
+        if len(res) == 9:
+            return res
     except BaseException:
         pass
 
-def apply_runes(name: str, runes: list[int]) -> str:
+def apply_runes(name: str, runes: list[int]) -> list[str]:
+    # Build runepage
+    s0 = _2style[runes[0]]
     data = {
         'current': True,
         'name': f'loltui: {name}',
-        'primaryStyleId': _2style[runes[0]],
+        'primaryStyleId': s0,
         'selectedPerkIds': runes,
         'subStyleId': _2style[runes[4]]}
+
+    # Submit to client
     if page := next((x for x in client.get_json('lol-perks/v1/pages')
                      if x['name'].startswith('loltui: ')), None):
-        requests
-        resp = client.put(
-            f'lol-perks/v1/pages/{page["id"]}',
-            data=json.dumps(data))
+        data = json.dumps(data | {'id': page['id']})
+        resp = client.put(f'lol-perks/v1/pages/{page["id"]}', data=data)
     else:
-        resp = client.post('lol-perks/v1/pages', data=data)
+        resp = client.post('lol-perks/v1/pages', data=json.dumps(data))
     if resp.status_code // 100 != 2:
         msg = resp.json().get("message", f"code {resp.status_code}")
-        return f'Failed to set runes: {cyell(msg)}'
-    return " ".join(
-        f"{_cperk.get(_2style.get(x), _cdef)(_2name[x])}" for x in runes)
+        return [f'Failed to set runes: {cyell(msg)}']
+
+    # Return string representation
+    return [f'{f"{CSI}38;5;{C_GRAY}m, ".join(f"{CSI}38;5;{k}m{_2name[r]}" for r in rs)}{CSI}m' for k, rs in groupby(
+        runes, lambda x: _cperk[_2style.get(x)])]

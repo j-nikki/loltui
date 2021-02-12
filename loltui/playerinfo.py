@@ -21,8 +21,6 @@ _crank = {  # rank colorizers
     'D': colorizer(14),
     'M': colorizer(12),
     'C': colorizer(50)}
-_runes = Dict()
-_rune_work = set()
 
 class PlayerInfo:
     def __wl_calc(self):
@@ -39,14 +37,8 @@ class PlayerInfo:
         self.__wl = ['' for _ in self.__ps]
         self.__seek = out_sz()
         self.__champs = []
-        self.__csc = None
-        self.__runemsg = ''
         self.__show_fn = show_fn
         self.__qwl = queue.Queue()
-        cs_sid = client.get_json(
-            'lol-summoner/v1/current-summoner')['summonerId']
-        self.__csidx = next(i for i, (d, _, _) in enumerate(
-            self.__ps) if d['summonerId'] == cs_sid)
         threading.Thread(target=self.__wl_calc, daemon=True).start()
 
     def get(self) -> Iterable[str]:
@@ -75,15 +67,6 @@ class PlayerInfo:
         if n := out_sz() - self.__seek:
             out_rm(n)
 
-    def __rune_fetch(self):
-        with suppress(KeyError):
-            while True:
-                cid = _rune_work.pop()
-                cname = client.champions[cid]['name']
-                if runes := get_runes(cname):
-                    _runes.write(cid, runes)
-        self.__champs = []
-
     def update(self, cids: list[int]):
         '''
         Updates the presented table to match given champ selections
@@ -96,23 +79,12 @@ class PlayerInfo:
             self.__champs = []
 
         # Re-render if necessary
-        if self.__champs != cids:
-            self.__champs = cids
-            self.__champidx = list(x.get(y)
-                                   for x, y in zip(self.__cid2mi, cids))
-            self.__show_fn()
-            csc = cids[self.__csidx]
-            if csc:
-                if _runes.write(csc, [], False):
-                    if not _rune_work:
-                        threading.Thread(target=self.__rune_fetch).start()
-                    _rune_work.add(csc)
-                elif runes := _runes[csc]:
-                    if self.__csc != csc:
-                        self.__runemsg = apply_runes(
-                            client.champions[csc]["name"], runes)
-                        self.__csc = csc
-                    out(self.__runemsg)
+        if self.__champs == cids:
+            return False
+        self.__champs = cids
+        self.__champidx = [x.get(y) for x, y in zip(self.__cid2mi, cids)]
+        self.__show_fn()
+        return True
 
     def post(self, i: int, x: str):
         '''

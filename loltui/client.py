@@ -3,7 +3,6 @@ import os
 import tempfile
 import time
 from contextlib import suppress
-from functools import wraps
 from typing import Optional
 from urllib.request import urlopen
 
@@ -16,7 +15,6 @@ from loltui.output import *
 _divs = ['I', 'II', 'III', 'IV', 'V']
 
 def retrying_request(f):
-    @wraps(f)
     def wrap(*args, **kwargs):
         while (res := f(*args, **kwargs)).status_code == 429:
             # https://developer.riotgames.com/docs/portal#web-apis_4xx-error-codes
@@ -61,20 +59,6 @@ class Client:
             'https://static.developer.riotgames.com/docs/lol/riotgames.pem').read())
         os.close(certfd)
         self.__port, self.__token = _get_port_and_token()
-        def request(f):
-            def wrap(endpoint: str, *args, **kwargs) -> Response:
-                try:
-                    resp = f(f'https://127.0.0.1:{self.__port}/{endpoint}', *args, **kwargs, headers={
-                        'Accept': 'application/json'}, auth=('riot', self.__token), verify=self.__cert)
-                    if resp.status_code // 100 == 2:
-                        return resp
-                    out(
-                        f'got response code {cyell(resp.status_code)} from LeagueClient.exe {cgray(f"({endpoint=})")}')
-                    exit(1)
-                except Exception as e:
-                    out(f'{cyell(e.__class__.__name__)}: {ctell(e)}')
-                    exit(1)
-            return wrap
         self.get, self.post, self.put, self.patch, self.delete = tuple(
             map(self.__make_requester, (_get, _post, _put, _patch, _delete)))
         self.__v = json.loads(urlopen(
@@ -99,7 +83,7 @@ class Client:
         '''
         acc = info['accountId']
         ml = self.get_json(f'lol-match-history/v1/friend-matchlists/{acc}')
-        gs = [g for g in ml['games']['games']
+        gs = [g for g in ml.get('games', {'games': []})['games']
               [::-1] if g['queueId'] in (420, 440)]
         def f(g):
             with suppress(StopIteration):

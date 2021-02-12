@@ -1,8 +1,6 @@
 from loltui.output import *
 from loltui.output import _buf
 
-out_init()
-
 class TestOutput:
 
     def test_sz(self):
