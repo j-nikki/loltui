@@ -3,6 +3,9 @@ import setuptools
 with open('README.md') as f:
     readme = f.read()
 
+with open('requirements.txt') as f:
+    requirements = f.read()
+
 setuptools.setup(
     name="loltui",
     version="0.1.0",
@@ -15,11 +18,7 @@ setuptools.setup(
     url="https://github.com/j-nikki/loltui",
     packages=setuptools.find_packages('.', exclude='test'),
     python_requires='~=3.9',
-    install_requires=[
-        'requests',
-        'psutil',
-        'keyboard',
-    ],
+    install_requires=requirements.splitliens(),
     classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",
