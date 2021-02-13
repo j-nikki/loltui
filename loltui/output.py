@@ -47,7 +47,7 @@ def button_unsub(subs: list):
 # Mutable display output
 #
 
-_buf = []
+_buf: list[str] = []
 _w = sys.stdout.write
 if 'pytest' not in sys.modules:
     _w(f'{CSI}?25l')
@@ -88,6 +88,6 @@ def box(*l, post=lambda i, x: x, title=''):
     title = f'╼{title}╾' if title else ""
     out([
         cgray(f'╭{title}{"─"*(w+2-len(title))}╮'),
-        *[f'{cgray("│ ")}{post(i, ln)}{" "*(w-len(ln))} {cgray("│")}' for i,
+        *[f'{cgray("│")} {post(i, ln)}{" "*(w-len(ln))} {cgray("│")}' for i,
           ln in enumerate(l)],
         f'{cgray("╰"+"─"*(w+2)+"╯")}'])
