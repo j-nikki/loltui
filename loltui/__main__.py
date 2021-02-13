@@ -35,8 +35,9 @@ if args.demo:
     with args.demo as f:
         d, q = json.load(f), 'Demo'
     cids = [x['championId'] for x in d['myTeam']]
-    ses = Session(q, (5, 0), [x['summonerId'] for x in d['myTeam']])
-    ses.loop(lambda: cids, 1)
+    ses = Session(q, (5, 0), [x['summonerId']
+                              for x in d['myTeam']], lambda: cids)
+    ses.loop(1)
     exit(0)
 
 #

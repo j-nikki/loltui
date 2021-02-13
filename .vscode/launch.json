@@ -9,12 +9,23 @@
             "cwd": "${workspaceFolder}",
         },
         {
+            "name": "loltui exe",
+            "type": "python",
+            "request": "launch",
+            "module": "loltui",
+            "args": [
+                "--exe"
+            ],
+            "cwd": "${workspaceFolder}",
+        },
+        {
             "name": "loltui demo",
             "type": "python",
             "request": "launch",
             "module": "loltui",
             "args": [
-                "-d", "demo.json"
+                "-d",
+                "demo.json"
             ],
             "cwd": "${workspaceFolder}",
         }
