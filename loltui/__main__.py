@@ -45,10 +45,10 @@ if args.demo:
 
 try:
     while True:
-        out(f'waiting for session, press {ctell("Ctrl+C")} to abort')
-        params, cids_getter = get_session_params(1)
-        out_rm()
-        ses = Session(*params)
-        ses.loop(cids_getter, 1)
+        sys.stdout.write(
+            f'waiting for session, press {ctell("Ctrl+C")} to abort\r')
+        ses = get_session(1)
+        sys.stdout.write('\033[J')
+        ses.loop(1)
 except KeyboardInterrupt:
     pass
