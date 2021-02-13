@@ -49,8 +49,9 @@ def button_unsub(subs: list):
 
 _buf = []
 _w = sys.stdout.write
-_w(f'{CSI}?25l')
-atexit.register(lambda: _w(f'{CSI}?25h'))
+if 'pytest' not in sys.modules:
+    _w(f'{CSI}?25l')
+    atexit.register(lambda: _w(f'{CSI}?25h'))
 
 def out(x: Iterable[str]):
     start = len(_buf)
@@ -81,12 +82,12 @@ def _aligned(l: list[str]):
     return _aligned(l)
 
 # https://en.wikipedia.org/wiki/Box-drawing_character
-def box(*l, post=lambda i, x: x, title=None):
+def box(*l, post=lambda i, x: x, title=''):
     l = _aligned([str(x).rstrip() for x in l])
-    title = f'╼{title}╾' if title else ""
     w = max((len(title), *map(len, l)))
+    title = f'╼{title}╾' if title else ""
     out([
-        cgray(f'╭{title}{"─"*(w-len(title) +2)}╮'),
+        cgray(f'╭{title}{"─"*(w+2-len(title))}╮'),
         *[f'{cgray("│ ")}{post(i, ln)}{" "*(w-len(ln))} {cgray("│")}' for i,
           ln in enumerate(l)],
         f'{cgray("╰"+"─"*(w+2)+"╯")}'])

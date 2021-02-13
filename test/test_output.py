@@ -17,16 +17,14 @@ class TestOutput:
 
     def test_box_empty(self):
         assert out_sz() == 0
-        box(min_width=0)
-        assert _buf[-1] == f'{cgray("╭──╮")}\n{cgray("╰──╯")}'
-        box(min_width=1)
-        assert _buf[-1] == f'{cgray("╭───╮")}\n{cgray("╰───╯")}'
+        box()
+        assert _buf == [cgray('╭──╮'), cgray('╰──╯')]
         out_rm(2)
         assert out_sz() == 0
 
     def test_box_title(self):
         assert out_sz() == 0
-        box(title='åäö', min_width=0)
-        assert _buf[-1] == f'{cgray("╭╼åäö╾──╮")}\n{cgray("╰───────╯")}'
+        box(title='åäö')
+        assert _buf == [cgray('╭╼åäö╾╮'), cgray('╰─────╯')]
         out_rm(2)
         assert out_sz() == 0
