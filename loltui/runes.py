@@ -1,10 +1,11 @@
 import re
-from itertools import groupby
-from typing import Optional
+from itertools import chain, groupby
+from operator import itemgetter
+from typing import Union
 
 import requests
 
-from loltui.client import *
+from loltui.client import client
 from loltui.output import *
 
 _headers = {
@@ -13,28 +14,38 @@ _headers = {
 _prunetbl = re.compile(r'<div class="perk-page__row">([\s\S]+?)</td>')
 _prune = re.compile(r'perk(Shard)?\/([0-9]+)\.png\?image=q_auto')
 
-_2style = [{perk: style['id'] for slot in style['slots']
-            for perk in slot['perks']} for style in client.get_json('lol-perks/v1/styles')]
-_commonperks = [x for x in _2style[0] if x in _2style[1]]
-_2style = {k: v for d in _2style for k, v in d.items() if k not in _commonperks}
+_2style = [[(perk, style['id']) for slot in style['slots'] for perk in slot['perks']]
+           for style in client.get_json('lol-perks/v1/styles')]
+_commonperks = set(map(itemgetter(0), _2style[0])).intersection(
+    map(itemgetter(0), _2style[1]))
+_2style = dict(
+    chain.from_iterable(filter(lambda x: x[0] not in _commonperks, _2style)))
 _2name = {perk['id']: perk['name']
           for perk in client.get_json('lol-perks/v1/perks')}
 
 _cperk = {8000: 214, 8100: 9, 8200: 177, 8400: 154, 8300: 75, None: 251}
 
-def get_runes(champ: str, role: str) -> Optional[list[int]]:
+def get_runes(champ: str, role: str) -> Union[list[int], str]:
     try:
         resp = requests.get(
             f'https://www.op.gg/champion/{champ}/statistics/{role}/rune',
             headers=_headers)
+    except Exception as e:
+        return f'Error querying for runes: {cyell(e)}'
+    try:
         tbl = _prunetbl.search(resp.content.decode('U8'))[1]
         res = [int(m[2]) for m in _prune.finditer(tbl)]
         if len(res) == 9:
             return res
-    except BaseException:
-        pass
+    except Exception as e:
+        return f'Error reading runes: {cyell(e)}'
+    return f'Error reading runes: {cyell("unexpected layout")}'
 
-def apply_runes(name: str, runes: list[int]) -> list[str]:
+def apply_runes(name: str, runes: Union[list[int], str]) -> list[str]:
+    # Return error message
+    if isinstance(runes, str):
+        return [runes]
+
     # Build runepage
     s0 = _2style[runes[0]]
     data = {
