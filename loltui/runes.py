@@ -19,8 +19,8 @@ _2style = [[(perk, style['id']) for slot in style['slots'] for perk in slot['per
            for style in client.get_json('lol-perks/v1/styles')]
 _commonperks = set(map(itemgetter(0), _2style[0])).intersection(
     map(itemgetter(0), _2style[1]))
-_2style = dict(
-    chain.from_iterable(filter(lambda x: x[0] not in _commonperks, _2style)))
+_2style = dict(filter(
+    lambda x: x[0] not in _commonperks, chain.from_iterable(_2style)))
 _2name = {perk['id']: perk['name']
           for perk in client.get_json('lol-perks/v1/perks')}
 

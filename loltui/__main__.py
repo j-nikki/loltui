@@ -1,7 +1,5 @@
 import argparse
-import time
-from itertools import chain
-from typing import Callable, Iterable
+import json
 
 #
 # Process args

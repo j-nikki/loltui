@@ -1,11 +1,11 @@
 import queue
 import re
 import threading
+from contextlib import suppress
 from typing import Iterable
 
-from loltui.client import *
-from loltui.dict import *
-from loltui.runes import *
+from loltui.client import client
+from loltui.output import *
 
 #
 # Player info presenter
@@ -22,16 +22,47 @@ _crank = {  # rank colorizers
     'M': colorizer(12),
     'C': colorizer(50)}
 
+def _wins_losses(info) -> list[bool]:
+    '''
+    Gets outcome of ranked games from 20 last games
+    '''
+    acc = info['accountId']
+    ml = client.get_json(f'lol-match-history/v1/friend-matchlists/{acc}')
+    gs = [g for g in ml.get('games', {'games': []})['games']
+          [::-1] if g['queueId'] in (420, 440)]
+    def f(g):
+        with suppress(StopIteration):
+            pi = next(x['participantId'] for x in g['participantIdentities']
+                      if x['player']['accountId'] == acc)
+            return next(x['stats']['win']
+                        for x in g['participants'] if x['participantId'] == pi)
+    return list(filter(lambda x: x is not None, map(f, gs)))
+
+_divs = ['I', 'II', 'III', 'IV', 'V']
+def _id2player(sid: str) -> tuple[dict, str, list]:
+    '''
+    Returns summoner info, rank, and masteries
+    '''
+    d = client.get_json(f'lol-summoner/v1/summoners/{sid}')
+    q = client.get_json(
+        f'lol-ranked/v1/ranked-stats/{d["puuid"]}')['queueMap']['RANKED_SOLO_5x5']
+    def fmt(t: str, d: str):
+        return f'{t[0].upper()}{_divs.index(d)+1}' if d != 'NA' else ''
+    rank = f'{fmt(q["previousSeasonEndTier"], q["previousSeasonEndDivision"])}→{fmt(q["tier"], q["division"])}'
+    cm = client.get_json(
+        f'lol-collections/v1/inventories/{d["summonerId"]}/champion-mastery')
+    return d, rank if rank != '→' else '', cm
+
 class PlayerInfo:
     def __wl_calc(self):
-        for i, wl in enumerate(client.wins_losses(x[0]) for x in self.__ps):
+        for i, wl in enumerate(_wins_losses(x[0]) for x in self.__ps):
             if wl:
                 self.__qwl.put((i, ''.join(map(str, map(int, wl)))))
 
     def __init__(self, geom: tuple[int, int],
                  summoner_ids: Iterable[str], show_fn):
         self.__sep = geom[0]
-        self.__ps = [client.id2player(x) for x in summoner_ids]
+        self.__ps = [_id2player(x) for x in summoner_ids]
         self.__cid2mi = [{x['championId']: i for i,
                           x in enumerate(cm)} for _, _, cm in self.__ps]
         self.__wl = ['' for _ in self.__ps]
