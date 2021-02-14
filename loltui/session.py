@@ -1,28 +1,50 @@
+import threading
+import time
+from contextlib import suppress
 from itertools import chain
-from typing import Callable
+from typing import Callable, Iterable, Optional, Union
 
-from loltui.client import *
-from loltui.playerinfo import *
+from loltui.client import client, qdata
+from loltui.output import *
+from loltui.playerinfo import PlayerInfo
+from loltui.runes import apply_runes, get_runes
 
-_runes = Dict()
+#
+# Rune retrieval
+#
+
+_lk = threading.Lock()
+_runes = dict()
 _rune_work = set()
+
+_roles = ['Top', 'Jungle', 'Middle', 'Support', 'ADC']
+def _rune_fetch():
+    val = next(iter(_rune_work))
+    with suppress(StopIteration):
+        while True:
+            cid, role = next(iter(_rune_work))
+            cname = client.champions[cid]['name']
+            val = get_runes(cname, _roles[role].lower())
+            with _lk:
+                _runes[(cid, role)] = val
+                _rune_work.remove((cid, role))
+                val = next(iter(_rune_work))
+
+def _get_rune(key) -> Optional[Union[list[int], str]]:
+    with _lk:
+        if val := _runes.get(key):
+            return val
+        elif key not in _rune_work:
+            if not _rune_work:
+                threading.Thread(target=_rune_fetch).start()
+            _rune_work.add(key)
 
 #
 # Session tab-keeper
 #
 
-_roles = ['Top', 'Jungle', 'Middle', 'Support', 'ADC']
-def _rune_fetch():
-    with suppress(KeyError):
-        while True:
-            cid, role = _rune_work.pop()
-            cname = client.champions[cid]['name']
-            if runes := get_runes(cname, _roles[role].lower()):
-                _runes.write((cid, role), runes)
-
 def _buts(cur: Optional[int]) -> str:
     return f'\033[38;5;46m▏RUNES: {" ".join(f"{cbut(r[0])}{r[1:]}" if i != cur else f"{CSI}38;5;46m{r}{CSI}0m" for i, r in enumerate(_roles))}'
-
 class Session:
     def __init__(self, q: str, geom: tuple[int, int], sids: Iterable[int], cids_getter: Callable[[
     ], Optional[list[int]]], *, runes: bool = False):
@@ -72,16 +94,11 @@ class Session:
             # Update runes
             if _role and (cc := int(client.get(
                     'lol-champ-select/v1/current-champion').content)):
-                key = (cc, _role)
                 if prev_cc == cc and prev_role == _role:
                     if _update:
                         out(runemsg)
                         _update = False
-                elif _runes.write(key, [], False):
-                    if not _rune_work:
-                        threading.Thread(target=_rune_fetch).start()
-                    _rune_work.add(key)
-                elif runes := _runes[key]:
+                elif runes := _get_rune((cc, _role)):
                     prev_cc = cc
                     prev_role = _role
                     if not _update:
@@ -117,6 +134,7 @@ def _get_gd_q() -> tuple[dict, str]:
     gd = client.get_json('lol-gameflow/v1/session')['gameData']
     return gd, qdata[qid]['description'].removesuffix(' games') if (
         qid := gd['queue']['id']) != -1 else 'Custom'
+
 def _ingame() -> bool:
     return client.get(
         'lol-gameflow/v1/gameflow-phase').content == b'"InProgress"'
