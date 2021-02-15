@@ -51,14 +51,14 @@ def apply_runes(name: str, runes: Union[list[int], str]) -> list[str]:
     s0 = _2style[runes[0]]
     data = {
         'current': True,
-        'name': f'loltui: {name}',
+        'name': f'lt: {name}',
         'primaryStyleId': s0,
         'selectedPerkIds': runes,
         'subStyleId': _2style[runes[4]]}
 
     # Submit to client
     if page := next((x for x in client.get_json('lol-perks/v1/pages')
-                     if x['name'].startswith('loltui: ')), None):
+                     if x['name'].startswith('lt: ')), None):
         data = json.dumps(data | {'id': page['id']})
         resp = client.put(f'lol-perks/v1/pages/{page["id"]}', data=data)
     else:

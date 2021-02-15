@@ -44,8 +44,11 @@ def _get_rune(key) -> Optional[Union[list[int], str]]:
 # Session tab-keeper
 #
 
-def _buts(cur: Optional[int]) -> str:
-    return f'\033[38;5;46m▏RUNES: {" ".join(f"{cbut(r[0])}{r[1:]}" if i != cur else f"{CSI}38;5;46m{r}{CSI}0m" for i, r in enumerate(_roles))}'
+_deffrag_str = ['Health', 'Armor', 'Magic Resist']
+_deffrag_id = [5001, 5002, 5003]
+def _buts() -> str:
+    cycle = f'\033[38;5;{C_GRAY}m • {cbut("C")}ycle: \033[38;5;{C_GRAY}m{" | ".join(v if _role is None or i != _deffrag else f"{CSI}38;5;46m{v}{CSI}38;5;{C_GRAY}m" for i, v in enumerate(_deffrag_str))}\033[0m'
+    return f'\033[38;5;46m▏RUNES: {" ".join(f"{cbut(r[0])}{r[1:]}" if i != _role else f"{CSI}38;5;46m{r}{CSI}0m" for i, r in enumerate(_roles))}{cycle}'
 class Session:
     def __init__(self, q: str, geom: tuple[int, int], sids: Iterable[int], cids_getter: Callable[[
     ], Optional[list[int]]], *, cc_getter: Optional[Callable[[list[int]], int]] = None):
@@ -74,15 +77,21 @@ class Session:
         #
         # Additionally show runes
         #
-        global _update, _role, _prev_role, _runemsg, _poll
+        global _update, _prev_cc, _role, _prev_role, _deffrag, _runemsg, _poll
         _update = False
-        prev_cc = None
+        _prev_cc = None
         _prev_role = None
-        _runemsg = [_buts(_role)]
+        _deffrag = 1
+        _runemsg = [_buts()]
         _poll = Event()
         def cb(i: int):
-            global _role
-            if _role != i:
+            global _role, _deffrag, _prev_cc
+            if i == 5:  # cycle
+                if _role is not None:
+                    _prev_cc = None
+                    _deffrag = (_deffrag + 1) % len(_deffrag_str)
+                    _poll.set()
+            elif _role != i:
                 _role = i
                 _poll.set()
         buts = button(_runemsg[0], cb)
@@ -95,35 +104,38 @@ class Session:
             # When there are no runes to show (yet?)
             def norunes():
                 global _role, _prev_role, _update, _runemsg
-                if _prev_role != _role:
+                if _poll.is_set():
                     _poll.clear()
                     _prev_role = _role
                     if not _update:
                         out_rm(len(_runemsg))
-                    _update = False
-                    _runemsg = [_buts(_role)]
+                    _runemsg = [_buts()]
                     out(_runemsg)
+                    _update = False
                 elif _update:
                     _update = False
                     out(_runemsg)
 
             # Update runes
             if _role and (cc := self.__ccg(cids)):
-                _poll.clear()
-                if prev_cc == cc and _prev_role == _role:
+                if _prev_cc == cc and _prev_role == _role:
+                    _poll.clear()
                     if _update:
                         out(_runemsg)
                         _update = False
                 elif runes := _get_rune((cc, _role)):
-                    prev_cc = cc
+                    runes[-1] = _deffrag_id[_deffrag]
+                    _poll.clear()
+                    _prev_cc = cc
                     _prev_role = _role
-                    if not _update:
-                        out_rm(len(_runemsg))
-                    _update = False
-                    runename = f'{client.champions[cc]["name"]} {_roles[_role]}'
+                    runename = f'{client.champions[cc]["name"]} {_roles[_role]} +{"".join(filter(str.isupper, _deffrag_str[_deffrag]))}'
+                    rmlen = len(_runemsg)
                     _runemsg = [
-                        _buts(_role), *map(lambda x:f'\033[38;5;46m▏ {x}', apply_runes(runename, runes))]
+                        _buts(), *map(lambda x:f'\033[38;5;46m▏ {x}', apply_runes(runename, runes))]
+                    if not _update:
+                        out_rm(rmlen)
                     out(_runemsg)
+                    _update = False
                 else:
                     norunes()
             else:
