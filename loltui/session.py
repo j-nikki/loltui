@@ -36,9 +36,10 @@ def _get_rune(key) -> Optional[Union[list[int], str]]:
         if val := _runes.get(key):
             return val
         elif key not in _rune_work:
-            if not _rune_work:
-                threading.Thread(target=_rune_fetch).start()
+            empty = not _rune_work
             _rune_work.add(key)
+            if empty:
+                threading.Thread(target=_rune_fetch).start()
 
 #
 # Session tab-keeper
