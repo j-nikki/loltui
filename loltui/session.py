@@ -47,8 +47,8 @@ def _get_rune(key) -> Optional[Union[list[int], str]]:
 _deffrag_str = ['Health', 'Armor', 'Magic Resist']
 _deffrag_id = [5001, 5002, 5003]
 def _buts() -> str:
-    cycle = f'\033[38;5;{C_GRAY}m • {cbut("C")}ycle: \033[38;5;{C_GRAY}m{" | ".join(v if _role is None or i != _deffrag else f"{CSI}38;5;46m{v}{CSI}38;5;{C_GRAY}m" for i, v in enumerate(_deffrag_str))}\033[0m'
-    return f'\033[38;5;46m▏RUNES: {" ".join(f"{cbut(r[0])}{r[1:]}" if i != _role else f"{CSI}38;5;46m{r}{CSI}0m" for i, r in enumerate(_roles))}{cycle}'
+    cycle = f'\033[38;5;{C_GRAY}m • {cbut("C")}ycle: \033[38;5;{C_GRAY}m{" | ".join(v if _role is None or i != _deffrag else f"{CSI}38;5;79m{v}{CSI}38;5;{C_GRAY}m" for i, v in enumerate(_deffrag_str))}\033[0m'
+    return f'\033[38;5;79m▏RUNES: {" ".join(f"{cbut(r[0])}{r[1:]}" if i != _role else f"{CSI}38;5;79m{r}{CSI}0m" for i, r in enumerate(_roles))}{cycle}'
 class Session:
     def __init__(self, q: str, geom: tuple[int, int], sids: Iterable[int], cids_getter: Callable[[
     ], Optional[list[int]]], *, cc_getter: Optional[Callable[[list[int]], int]] = None):
@@ -91,8 +91,8 @@ class Session:
                     _prev_cc = None
                     _deffrag = (_deffrag + 1) % len(_deffrag_str)
                     _poll.set()
-            elif _role != i:
-                _role = i
+            else:
+                _role = i if _role != i else None
                 _poll.set()
         buts = button(_runemsg[0], cb)
 
@@ -131,7 +131,7 @@ class Session:
                     runename = f'{client.champions[cc]["name"]} {_roles[_role]} +{"".join(filter(str.isupper, _deffrag_str[_deffrag]))}'
                     rmlen = len(_runemsg)
                     _runemsg = [
-                        _buts(), *map(lambda x:f'\033[38;5;46m▏ {x}', apply_runes(runename, runes))]
+                        _buts(), *map(lambda x:f'\033[38;5;79m▏ {x}', apply_runes(runename, runes))]
                     if not _update:
                         out_rm(rmlen)
                     out(_runemsg)
