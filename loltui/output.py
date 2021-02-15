@@ -12,8 +12,13 @@ CSI, LF = '\033[', '\n'
 # Colored output
 #
 
+# https://stackoverflow.com/a/60194390
 if os.name == 'nt':
-    os.system('color')
+    from ctypes import windll
+    _k = windll.kernel32
+    _k.SetConsoleMode(_k.GetStdHandle(-11), 7)
+    # https://stackoverflow.com/a/51524239
+    os.system('')
 
 # https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
 def colorizer(fg: int, bg: Optional[int] = None):
