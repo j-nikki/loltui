@@ -1,7 +1,8 @@
 import threading
 import time
-from contextlib import suppress
 from itertools import chain
+from operator import itemgetter
+from threading import Event
 from typing import Callable, Iterable, Optional, Union
 
 from loltui.client import client, qdata
@@ -19,16 +20,16 @@ _rune_work = set()
 
 _roles = ['Top', 'Jungle', 'Middle', 'Support', 'ADC']
 def _rune_fetch():
-    val = next(iter(_rune_work))
-    with suppress(StopIteration):
-        while True:
-            cid, role = next(iter(_rune_work))
-            cname = client.champions[cid]['name']
-            val = get_runes(cname, _roles[role].lower())
-            with _lk:
-                _runes[(cid, role)] = val
-                _rune_work.remove((cid, role))
-                val = next(iter(_rune_work))
+    while True:
+        cid, role = next(iter(_rune_work))
+        cname = client.champions[cid]['name']
+        val = get_runes(cname, _roles[role].lower())
+        with _lk:
+            _runes[(cid, role)] = val
+            _rune_work.remove((cid, role))
+            if not _rune_work:
+                _poll.clear()
+                return
 
 def _get_rune(key) -> Optional[Union[list[int], str]]:
     with _lk:
@@ -47,10 +48,10 @@ def _buts(cur: Optional[int]) -> str:
     return f'\033[38;5;46m▏RUNES: {" ".join(f"{cbut(r[0])}{r[1:]}" if i != cur else f"{CSI}38;5;46m{r}{CSI}0m" for i, r in enumerate(_roles))}'
 class Session:
     def __init__(self, q: str, geom: tuple[int, int], sids: Iterable[int], cids_getter: Callable[[
-    ], Optional[list[int]]], *, runes: bool = False):
+    ], Optional[list[int]]], *, cc_getter: Optional[Callable[[list[int]], int]] = None):
         self.__q = q
         self.__pi = PlayerInfo(geom, sids, self.__present)
-        self.__runes = runes
+        self.__ccg = cc_getter
         self.__cg = cids_getter
 
     def __present(self):
@@ -60,12 +61,10 @@ class Session:
         box(*self.__pi.get(), post=self.__pi.post, title=self.__q)
 
     def loop(self, interval: float):
-
         #
         # Show player info only
         #
-
-        if not self.__runes:
+        if not self.__ccg:
             while cids := self.__cg():
                 self.__pi.update(cids)
                 time.sleep(interval)
@@ -75,59 +74,70 @@ class Session:
         #
         # Additionally show runes
         #
-
-        global _role
+        global _update, _role, _prev_role, _runemsg, _poll
         _update = False
         prev_cc = None
-        prev_role = None
-        runemsg = [_buts(_role)]
+        _prev_role = None
+        _runemsg = [_buts(_role)]
+        _poll = Event()
         def cb(i: int):
             global _role
-            _role = i
-        buts = button(runemsg[0], cb)
+            if _role != i:
+                _role = i
+                _poll.set()
+        buts = button(_runemsg[0], cb)
 
         while cids := self.__cg():
             # Update presented summoner info
             if self.__pi.update(cids):
                 _update = True
 
+            # When there are no runes to show (yet?)
+            def norunes():
+                global _role, _prev_role, _update, _runemsg
+                if _prev_role != _role:
+                    _poll.clear()
+                    _prev_role = _role
+                    if not _update:
+                        out_rm(len(_runemsg))
+                    _update = False
+                    _runemsg = [_buts(_role)]
+                    out(_runemsg)
+                elif _update:
+                    _update = False
+                    out(_runemsg)
+
             # Update runes
-            if _role and (cc := int(client.get(
-                    'lol-champ-select/v1/current-champion').content)):
-                if prev_cc == cc and prev_role == _role:
+            if _role and (cc := self.__ccg(cids)):
+                _poll.clear()
+                if prev_cc == cc and _prev_role == _role:
                     if _update:
-                        out(runemsg)
+                        out(_runemsg)
                         _update = False
                 elif runes := _get_rune((cc, _role)):
                     prev_cc = cc
-                    prev_role = _role
+                    _prev_role = _role
                     if not _update:
-                        out_rm(len(runemsg))
+                        out_rm(len(_runemsg))
                     _update = False
                     runename = f'{client.champions[cc]["name"]} {_roles[_role]}'
-                    runemsg = [
+                    _runemsg = [
                         _buts(_role), *map(lambda x:f'\033[38;5;46m▏ {x}', apply_runes(runename, runes))]
-                    out(runemsg)
-            elif prev_role != _role:
-                prev_role = _role
-                if not _update:
-                    out_rm(len(runemsg))
-                _update = False
-                runemsg = [_buts(_role)]
-                out(runemsg)
-            elif _update:
-                _update = False
-                out(runemsg)
+                    out(_runemsg)
+                else:
+                    norunes()
+            else:
+                norunes()
 
             # Periodical polling for champs
-            time.sleep(interval)
+            _poll.wait(interval)
 
         button_unsub(buts)
         self.__pi.clear()
         _role = None
 
 #
-# Session awaiting
+# In-game session
 #
 
 def _get_gd_q() -> tuple[dict, str]:
@@ -154,6 +164,10 @@ def _get_ingame_session() -> Optional[Session]:
         return Session(q, g, [int(x['summonerId'])
                               for x in ps], lambda: _ingame() and cids)
 
+#
+# Champ-selection session
+#
+
 _pos = ['top', 'jungle', 'middle', 'utility', 'bottom']
 def _get_champsel_session() -> Optional[Session]:
     '''
@@ -170,12 +184,17 @@ def _get_champsel_session() -> Optional[Session]:
         _, q = _get_gd_q()
 
         cs = client.get_json('lol-summoner/v1/current-summoner')['summonerId']
+        csi = next(i for i, x in enumerate(d) if x['summonerId'] == cs)
         cspos = next(x['assignedPosition'] for x in d if x['summonerId'] == cs)
         global _role
         _role = _pos.index(cspos) if cspos in _pos else None
 
         return Session(q, (len(d), 0), [x['summonerId']
-                                        for x in d], get_cids, runes=True)
+                                        for x in d], get_cids, cc_getter=itemgetter(csi))
+
+#
+# Session retrieval
+#
 
 def _try_get_ses() -> Optional[Session]:
     if (gf := client.get('lol-gameflow/v1/gameflow-phase').content) == b'"ChampSelect"':
