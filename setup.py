@@ -18,7 +18,7 @@ setuptools.setup(
     url="https://github.com/j-nikki/loltui",
     packages=setuptools.find_packages('.', exclude='test'),
     python_requires='~=3.9',
-    install_requires=requirements.splitliens(),
+    install_requires=requirements.splitlines(),
     classifiers=[
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.9",
